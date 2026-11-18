@@ -3,6 +3,7 @@ import os
 import json
 import random
 import datetime
+import aiohttp
 import discord
 from discord.ext import commands
 from discord import app_commands
@@ -97,7 +98,7 @@ async def check_balance(guild, member):
 
     return (
         f"💰 **{member.display_name}'s balance:** "
-        f"{account['balance']} SC"
+        f"{account['balance']:,} SC"
     )
 
 
@@ -179,9 +180,101 @@ async def pay_member(guild, sender, receiver, amount):
     save_currency()
 
     return (
-        f"💸 {sender.mention} sent **{amount} SC** "
+        f"💸 {sender.mention} sent **{amount:,} SC** "
         f"to {receiver.mention}!"
     )
+
+
+# ==================================
+# LEADERBOARD
+# ==================================
+
+def create_leaderboard(guild):
+
+    server = currency_data.get(str(guild.id), {})
+
+    if not server:
+        return None
+
+    sorted_users = sorted(
+        server.items(),
+        key=lambda item: item[1]["balance"],
+        reverse=True
+    )
+
+    embed = discord.Embed(
+        title=f"🏆 {guild.name} Leaderboard",
+        color=discord.Color.gold()
+    )
+
+    medals = ["🥇", "🥈", "🥉"]
+    lines = []
+
+    for position, (user_id, account) in enumerate(
+        sorted_users[:10],
+        start=1
+    ):
+
+        medal = (
+            medals[position - 1]
+            if position <= 3
+            else f"**{position}.**"
+        )
+
+        lines.append(
+            f"{medal} <@{user_id}> — "
+            f"**{account['balance']:,} SC**"
+        )
+
+    embed.description = "\n".join(lines)
+
+    embed.set_footer(
+        text="Space Dood Economy"
+    )
+
+    return embed
+
+
+# ==================================
+# CAT AND DOG IMAGE FUNCTIONS
+# ==================================
+
+async def get_animal_image(animal):
+
+    urls = {
+        "cat": "https://api.thecatapi.com/v1/images/search",
+        "dog": "https://dog.ceo/api/breeds/image/random"
+    }
+
+    try:
+
+        timeout = aiohttp.ClientTimeout(total=15)
+
+        async with aiohttp.ClientSession() as session:
+
+            async with session.get(
+                urls[animal],
+                timeout=timeout
+            ) as response:
+
+                if response.status != 200:
+                    return None
+
+                data = await response.json()
+
+                if animal == "cat":
+                    return data[0]["url"]
+
+                return data["message"]
+
+    except (
+        aiohttp.ClientError,
+        KeyError,
+        IndexError,
+        ValueError,
+        TimeoutError
+    ):
+        return None
 
 
 # ==================================
@@ -474,6 +567,60 @@ async def pay_prefix(ctx, member: discord.Member, amount: int):
     await ctx.send(result)
 
 
+@bot.command(name="leaderboard")
+async def leaderboard_prefix(ctx):
+
+    if ctx.guild is None:
+        await ctx.send("This command can only be used in a server.")
+        return
+
+    embed = create_leaderboard(ctx.guild)
+
+    if embed is None:
+        await ctx.send("Nobody has earned any Space Coins yet!")
+        return
+
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="cat")
+async def cat_prefix(ctx):
+
+    image_url = await get_animal_image("cat")
+
+    if image_url is None:
+        await ctx.send("Couldn't find a cat picture. Try again!")
+        return
+
+    embed = discord.Embed(
+        title="🐱 Here's a cute cat!",
+        color=discord.Color.blurple()
+    )
+
+    embed.set_image(url=image_url)
+
+    await ctx.send(embed=embed)
+
+
+@bot.command(name="dog")
+async def dog_prefix(ctx):
+
+    image_url = await get_animal_image("dog")
+
+    if image_url is None:
+        await ctx.send("Couldn't find a dog picture. Try again!")
+        return
+
+    embed = discord.Embed(
+        title="🐶 Here's a cute dog!",
+        color=discord.Color.blurple()
+    )
+
+    embed.set_image(url=image_url)
+
+    await ctx.send(embed=embed)
+
+
 # ==================================
 # SLASH COMMANDS (/)
 # ==================================
@@ -582,6 +729,83 @@ async def pay_slash(
     )
 
     await interaction.response.send_message(result, ephemeral=True)
+
+
+@bot.tree.command(
+    name="leaderboard",
+    description="View the richest members in this server"
+)
+async def leaderboard_slash(interaction: discord.Interaction):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    embed = create_leaderboard(interaction.guild)
+
+    if embed is None:
+        await interaction.response.send_message(
+            "Nobody has earned any Space Coins yet!",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(embed=embed)
+
+
+@bot.tree.command(
+    name="cat",
+    description="Find a cute cat picture"
+)
+async def cat_slash(interaction: discord.Interaction):
+
+    await interaction.response.defer()
+
+    image_url = await get_animal_image("cat")
+
+    if image_url is None:
+        await interaction.followup.send(
+            "Couldn't find a cat picture. Try again!"
+        )
+        return
+
+    embed = discord.Embed(
+        title="🐱 Here's a cute cat!",
+        color=discord.Color.blurple()
+    )
+
+    embed.set_image(url=image_url)
+
+    await interaction.followup.send(embed=embed)
+
+
+@bot.tree.command(
+    name="dog",
+    description="Find a cute dog picture"
+)
+async def dog_slash(interaction: discord.Interaction):
+
+    await interaction.response.defer()
+
+    image_url = await get_animal_image("dog")
+
+    if image_url is None:
+        await interaction.followup.send(
+            "Couldn't find a dog picture. Try again!"
+        )
+        return
+
+    embed = discord.Embed(
+        title="🐶 Here's a cute dog!",
+        color=discord.Color.blurple()
+    )
+
+    embed.set_image(url=image_url)
+
+    await interaction.followup.send(embed=embed)
 
 
 # ==================================
