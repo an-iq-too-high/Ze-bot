@@ -1,12 +1,14 @@
 
-
 import os
 import datetime
 import discord
 from discord.ext import commands
 from discord import app_commands
 
-# Bot setup
+# ==================================
+# BOT SETUP
+# ==================================
+
 intents = discord.Intents.default()
 intents.message_content = True
 
@@ -22,8 +24,12 @@ bot = SpaceDood(
 )
 
 
-# Check whether a moderation action is allowed
+# ==================================
+# MODERATION CHECKS
+# ==================================
+
 def check_moderation(guild, actor, target, permission):
+
     if guild is None:
         return "This command can only be used in a server."
 
@@ -44,24 +50,59 @@ def check_moderation(guild, actor, target, permission):
     if not getattr(bot_member.guild_permissions, permission):
         return "I don't have the required server permission."
 
-        print("SPACE DOOD:", bot_member.top_role.name,
-            bot_member.top_role.position)
+    # DEBUG: Print role information
+    print("========== ROLE DEBUG ==========")
 
-        print("TARGET:", target.top_role.name,
-            target.top_role.position)
+    print(
+        "SPACE DOOD:",
+        bot_member.top_role.name,
+        "Position:",
+        bot_member.top_role.position
+    )
 
+    print(
+        "TARGET:",
+        target.top_role.name,
+        "Position:",
+        target.top_role.position
+    )
+
+    print(
+        "ACTOR:",
+        actor.top_role.name,
+        "Position:",
+        actor.top_role.position
+    )
+
+    print("================================")
+
+    # Bot role hierarchy
     if bot_member.top_role <= target.top_role:
-        return "That member's role is higher than or equal to mine."
+        return (
+            f"My highest role ({bot_member.top_role.name}) "
+            f"is not above {target.display_name}'s highest role "
+            f"({target.top_role.name})."
+        )
 
+    # Moderator role hierarchy
     if actor.id != guild.owner_id and actor.top_role <= target.top_role:
         return "You can't moderate someone with an equal or higher role."
 
     return None
 
 
-# Perform moderation actions
-async def moderate(guild, actor, target, action, reason,
-                   minutes=None):
+# ==================================
+# MODERATION FUNCTION
+# ==================================
+
+async def moderate(
+    guild,
+    actor,
+    target,
+    action,
+    reason,
+    minutes=None
+):
 
     permission = {
         "kick": "kick_members",
@@ -70,13 +111,17 @@ async def moderate(guild, actor, target, action, reason,
     }[action]
 
     error = check_moderation(
-        guild, actor, target, permission
+        guild,
+        actor,
+        target,
+        permission
     )
 
     if error:
         return error
 
     try:
+
         if action == "kick":
             await target.kick(reason=reason)
             return f"Successfully kicked {target}."
@@ -90,12 +135,17 @@ async def moderate(guild, actor, target, action, reason,
                 datetime.timedelta(minutes=minutes),
                 reason=reason
             )
-            return f"Successfully timed out {target} for {minutes} minutes."
+
+            return (
+                f"Successfully timed out {target} "
+                f"for {minutes} minutes."
+            )
 
     except discord.Forbidden:
-        return "Discord denied that action. Check my permissions and role."
+        return "Discord denied that action. Check permissions and role hierarchy."
 
-    except discord.HTTPException:
+    except discord.HTTPException as error:
+        print("Discord API error:", error)
         return "Something went wrong while contacting Discord."
 
 
@@ -104,41 +154,65 @@ async def moderate(guild, actor, target, action, reason,
 # ==================================
 
 @bot.command(name="kick")
-async def kick_prefix(ctx, member: discord.Member,
-                      *, reason="No reason provided"):
+async def kick_prefix(
+    ctx,
+    member: discord.Member,
+    *,
+    reason="No reason provided"
+):
 
     result = await moderate(
-        ctx.guild, ctx.author, member,
-        "kick", reason
+        ctx.guild,
+        ctx.author,
+        member,
+        "kick",
+        reason
     )
 
     await ctx.send(result)
 
 
 @bot.command(name="ban")
-async def ban_prefix(ctx, member: discord.Member,
-                     *, reason="No reason provided"):
+async def ban_prefix(
+    ctx,
+    member: discord.Member,
+    *,
+    reason="No reason provided"
+):
 
     result = await moderate(
-        ctx.guild, ctx.author, member,
-        "ban", reason
+        ctx.guild,
+        ctx.author,
+        member,
+        "ban",
+        reason
     )
 
     await ctx.send(result)
 
 
 @bot.command(name="timeout")
-async def timeout_prefix(ctx, member: discord.Member,
-                         minutes: int,
-                         *, reason="No reason provided"):
+async def timeout_prefix(
+    ctx,
+    member: discord.Member,
+    minutes: int,
+    *,
+    reason="No reason provided"
+):
 
     if not 1 <= minutes <= 40320:
-        await ctx.send("Timeout must be between 1 and 40320 minutes.")
+        await ctx.send(
+            "Timeout must be between 1 and 40320 minutes."
+        )
         return
 
     result = await moderate(
-        ctx.guild, ctx.author, member,
-        "timeout", reason, minutes
+        ctx.guild,
+        ctx.author,
+        member,
+        "timeout",
+        reason,
+        minutes
     )
 
     await ctx.send(result)
@@ -148,7 +222,10 @@ async def timeout_prefix(ctx, member: discord.Member,
 # SLASH COMMANDS (/)
 # ==================================
 
-@bot.tree.command(name="kick", description="Kick a member")
+@bot.tree.command(
+    name="kick",
+    description="Kick a member"
+)
 @app_commands.describe(
     member="The member to kick",
     reason="Why they are being kicked"
@@ -160,16 +237,23 @@ async def kick_slash(
 ):
 
     result = await moderate(
-        interaction.guild, interaction.user, member,
-        "kick", reason
+        interaction.guild,
+        interaction.user,
+        member,
+        "kick",
+        reason
     )
 
     await interaction.response.send_message(
-        result, ephemeral=True
+        result,
+        ephemeral=True
     )
 
 
-@bot.tree.command(name="ban", description="Ban a member")
+@bot.tree.command(
+    name="ban",
+    description="Ban a member"
+)
 @app_commands.describe(
     member="The member to ban",
     reason="Why they are being banned"
@@ -181,19 +265,26 @@ async def ban_slash(
 ):
 
     result = await moderate(
-        interaction.guild, interaction.user, member,
-        "ban", reason
+        interaction.guild,
+        interaction.user,
+        member,
+        "ban",
+        reason
     )
 
     await interaction.response.send_message(
-        result, ephemeral=True
+        result,
+        ephemeral=True
     )
 
 
-@bot.tree.command(name="timeout", description="Timeout a member")
+@bot.tree.command(
+    name="timeout",
+    description="Timeout a member"
+)
 @app_commands.describe(
     member="The member to timeout",
-    minutes="Timeout duration in minutes (1–40320)",
+    minutes="Timeout duration in minutes",
     reason="Why they are being timed out"
 )
 async def timeout_slash(
@@ -204,12 +295,17 @@ async def timeout_slash(
 ):
 
     result = await moderate(
-        interaction.guild, interaction.user, member,
-        "timeout", reason, minutes
+        interaction.guild,
+        interaction.user,
+        member,
+        "timeout",
+        reason,
+        minutes
     )
 
     await interaction.response.send_message(
-        result, ephemeral=True
+        result,
+        ephemeral=True
     )
 
 
@@ -219,10 +315,15 @@ async def timeout_slash(
 
 @bot.event
 async def on_ready():
-    print(f"Space Dood is online! Logged in as {bot.user}")
+    print(
+        f"Space Dood is online! Logged in as {bot.user}"
+    )
 
 
-# Start bot
+# ==================================
+# START BOT
+# ==================================
+
 token = os.getenv("DISCORD_SECRET")
 
 if not token:
