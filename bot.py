@@ -2,6 +2,7 @@ import os
 import json
 import random
 import datetime
+import asyncio
 import aiohttp
 import discord
 from discord.ext import commands
@@ -21,12 +22,209 @@ class SpaceDood(commands.Bot):
         self.add_view(TicketPanelView())
         self.add_view(TicketCloseView())
         await self.tree.sync()
+        await resume_giveaways()
 
 
 bot = SpaceDood(
     command_prefix="!",
     intents=intents
 )
+
+
+# ==================================
+# GIVEAWAY DATABASE
+# ==================================
+
+GIVEAWAY_FILE = "giveaways.json"
+
+
+def load_giveaways():
+    if not os.path.exists(GIVEAWAY_FILE):
+        return {}
+
+    try:
+        with open(GIVEAWAY_FILE, "r") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+giveaway_data = load_giveaways()
+giveaway_tasks = {}
+
+
+def save_giveaways():
+    temporary_file = GIVEAWAY_FILE + ".tmp"
+
+    with open(temporary_file, "w") as file:
+        json.dump(giveaway_data, file, indent=4)
+
+    os.replace(temporary_file, GIVEAWAY_FILE)
+
+
+def schedule_giveaway(message_id):
+    message_id = str(message_id)
+
+    if message_id in giveaway_tasks:
+        return
+
+    task = asyncio.create_task(
+        finish_giveaway(message_id)
+    )
+
+    giveaway_tasks[message_id] = task
+
+
+async def finish_giveaway(message_id):
+    message_id = str(message_id)
+
+    try:
+        giveaway = giveaway_data.get(message_id)
+
+        if giveaway is None:
+            return
+
+        end_time = giveaway["end_time"]
+
+        now = datetime.datetime.now(
+            datetime.timezone.utc
+        ).timestamp()
+
+        remaining = end_time - now
+
+        if remaining > 0:
+            await asyncio.sleep(remaining)
+
+        giveaway = giveaway_data.get(message_id)
+
+        if giveaway is None:
+            return
+
+        channel_id = int(giveaway["channel_id"])
+
+        channel = bot.get_channel(channel_id)
+
+        if channel is None:
+            channel = await bot.fetch_channel(channel_id)
+
+        message = await channel.fetch_message(
+            int(message_id)
+        )
+
+        entrants = []
+
+        for reaction in message.reactions:
+            if str(reaction.emoji) == "🎉":
+
+                async for user in reaction.users():
+                    if not user.bot:
+                        entrants.append(user)
+
+                break
+
+        winner = (
+            random.choice(entrants)
+            if entrants
+            else None
+        )
+
+        embed = discord.Embed(
+            title="🎉 GIVEAWAY ENDED",
+            description=(
+                f"**Prize:** {giveaway['prize']}\n\n"
+                + (
+                    f"**Winner:** {winner.mention}"
+                    if winner
+                    else "**No one entered this giveaway!**"
+                )
+            ),
+            color=discord.Color.red()
+        )
+
+        embed.set_footer(
+            text="Space Dood Giveaways"
+        )
+
+        await message.edit(embed=embed)
+
+        if winner:
+            await channel.send(
+                f"🎉 Congratulations {winner.mention}! "
+                f"You won **{giveaway['prize']}**!"
+            )
+        else:
+            await channel.send(
+                f"🎉 The giveaway for **{giveaway['prize']}** "
+                "has ended, but nobody entered."
+            )
+
+        giveaway_data.pop(message_id, None)
+        save_giveaways()
+
+    except discord.NotFound:
+        giveaway_data.pop(message_id, None)
+        save_giveaways()
+
+    except discord.Forbidden as error:
+        print("Giveaway permission error:", error)
+
+    except discord.HTTPException as error:
+        print("Giveaway Discord API error:", error)
+
+    except Exception as error:
+        print("Giveaway error:", error)
+
+    finally:
+        giveaway_tasks.pop(message_id, None)
+
+
+async def resume_giveaways():
+    for message_id in list(giveaway_data.keys()):
+        schedule_giveaway(message_id)
+
+
+async def start_giveaway(channel, duration, prize):
+    end_time = (
+        datetime.datetime.now(
+            datetime.timezone.utc
+        ).timestamp() + duration
+    )
+
+    end_datetime = datetime.datetime.fromtimestamp(
+        end_time,
+        datetime.timezone.utc
+    )
+
+    embed = discord.Embed(
+        title="🎉 GIVEAWAY!",
+        description=(
+            f"**Prize:** {prize}\n\n"
+            "React with 🎉 to enter!\n\n"
+            f"**Ends:** <t:{int(end_time)}:R>"
+        ),
+        color=discord.Color.red()
+    )
+
+    embed.set_footer(
+        text="Space Dood Giveaways"
+    )
+
+    message = await channel.send(embed=embed)
+
+    await message.add_reaction("🎉")
+
+    giveaway_data[str(message.id)] = {
+        "channel_id": channel.id,
+        "guild_id": channel.guild.id,
+        "prize": prize,
+        "end_time": end_time
+    }
+
+    save_giveaways()
+
+    schedule_giveaway(message.id)
+
+    return message
 
 
 # ==================================
@@ -965,6 +1163,30 @@ def get_joke():
 
 
 # ==================================
+# 8BALL FUNCTION
+# ==================================
+
+EIGHT_BALL_ANSWERS = [
+    "It is certain.",
+    "Without a doubt.",
+    "Yes, definitely!",
+    "You can count on it.",
+    "Most likely.",
+    "Signs point to yes.",
+    "Ask again later.",
+    "Cannot predict that right now.",
+    "Don't count on it.",
+    "My reply is no.",
+    "Very doubtful.",
+    "Absolutely not!"
+]
+
+
+def get_eight_ball_answer():
+    return random.choice(EIGHT_BALL_ANSWERS)
+
+
+# ==================================
 # POLL FUNCTION
 # ==================================
 
@@ -1343,6 +1565,60 @@ async def warn_prefix(ctx, member: discord.Member, *, reason="No reason provided
 @bot.command(name="joke")
 async def joke_prefix(ctx):
     await ctx.send(get_joke())
+
+
+@bot.command(name="8ball")
+async def eightball_prefix(ctx, *, question: str):
+
+    await ctx.send(
+        f"🎱 **Question:** {question}\n"
+        f"**Answer:** {get_eight_ball_answer()}"
+    )
+
+
+@bot.command(name="giveaway")
+async def giveaway_prefix(ctx, duration: int, *, prize: str):
+
+    if ctx.guild is None:
+        await ctx.send("Giveaways can only be started in a server.")
+        return
+
+    if not ctx.author.guild_permissions.manage_guild:
+        await ctx.send(
+            "You need the Manage Server permission to start giveaways."
+        )
+        return
+
+    if not 10 <= duration <= 604800:
+        await ctx.send(
+            "Giveaway duration must be between 10 and 604800 seconds."
+        )
+        return
+
+    if not prize.strip():
+        await ctx.send("Please provide a prize.")
+        return
+
+    try:
+        message = await start_giveaway(
+            ctx.channel,
+            duration,
+            prize
+        )
+
+        await ctx.send(
+            f"🎉 Giveaway started! {message.jump_url}"
+        )
+
+    except discord.Forbidden:
+        await ctx.send(
+            "I need permission to send messages, embed links, "
+            "and add reactions to start a giveaway."
+        )
+
+    except discord.HTTPException as error:
+        print("Giveaway start error:", error)
+        await ctx.send("Something went wrong while starting the giveaway.")
 
 
 @bot.command(name="poll")
@@ -1813,6 +2089,90 @@ async def joke_slash(interaction: discord.Interaction):
     await interaction.response.send_message(
         get_joke()
     )
+
+
+@bot.tree.command(
+    name="8ball",
+    description="Ask the magic 8ball a question"
+)
+@app_commands.describe(
+    question="What would you like to ask?"
+)
+async def eightball_slash(
+    interaction: discord.Interaction,
+    question: str
+):
+
+    await interaction.response.send_message(
+        f"🎱 **Question:** {question}\n"
+        f"**Answer:** {get_eight_ball_answer()}"
+    )
+
+
+@bot.tree.command(
+    name="giveaway",
+    description="Start a giveaway"
+)
+@app_commands.default_permissions(manage_guild=True)
+@app_commands.describe(
+    duration="Duration in seconds (10–604800)",
+    prize="What are you giving away?"
+)
+async def giveaway_slash(
+    interaction: discord.Interaction,
+    duration: app_commands.Range[int, 10, 604800],
+    prize: str
+):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "Giveaways can only be started in a server.",
+            ephemeral=True
+        )
+        return
+
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message(
+            "You need the Manage Server permission to start giveaways.",
+            ephemeral=True
+        )
+        return
+
+    if not prize.strip():
+        await interaction.response.send_message(
+            "Please provide a prize.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(ephemeral=True)
+
+    try:
+        message = await start_giveaway(
+            interaction.channel,
+            duration,
+            prize
+        )
+
+        await interaction.followup.send(
+            f"🎉 Giveaway started! {message.jump_url}",
+            ephemeral=True
+        )
+
+    except discord.Forbidden:
+        await interaction.followup.send(
+            "I need permission to send messages, embed links, "
+            "and add reactions to start a giveaway.",
+            ephemeral=True
+        )
+
+    except discord.HTTPException as error:
+        print("Giveaway start error:", error)
+
+        await interaction.followup.send(
+            "Something went wrong while starting the giveaway.",
+            ephemeral=True
+        )
 
 
 @bot.tree.command(name="poll", description="Create a poll")
