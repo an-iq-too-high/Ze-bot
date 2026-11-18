@@ -1,4 +1,3 @@
-
 import os
 import json
 import random
@@ -361,8 +360,23 @@ def save_modmail_threads():
     save_json(MODMAIL_THREADS_FILE, modmail_threads)
 
 
+# FIXED: Create a default configuration if the server
+# doesn't already have one.
 def get_modmail_config(guild_id):
-    return modmail_config.get(str(guild_id))
+    server_id = str(guild_id)
+
+    if server_id not in modmail_config:
+        modmail_config[server_id] = {
+            "category_id": None,
+            "enabled": False
+        }
+        save_modmail_config()
+
+    config = modmail_config[server_id]
+    config.setdefault("category_id", None)
+    config.setdefault("enabled", False)
+
+    return config
 
 
 def get_modmail_thread(user_id):
@@ -415,9 +429,6 @@ def is_modmail_staff(member):
 
 async def get_modmail_category(guild):
     config = get_modmail_config(guild.id)
-
-    if config is None:
-        return None
 
     category = None
 
@@ -483,9 +494,6 @@ async def setup_modmail(guild):
 
     try:
         category = await get_modmail_category(guild)
-        
-        if category is None:
-            return False, "I couldn't create the Modmail category."
 
         # Update the category permissions in case staff roles changed.
         await category.set_permissions(
