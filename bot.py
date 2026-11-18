@@ -1,4 +1,3 @@
-
 import os
 import json
 import random
@@ -14,6 +13,7 @@ from discord import app_commands
 
 intents = discord.Intents.default()
 intents.message_content = True
+intents.members = True
 
 
 class SpaceDood(commands.Bot):
@@ -161,6 +161,70 @@ def can_manage_ticket_settings(member):
     return (
         member.guild is not None
         and member.guild_permissions.manage_guild
+    )
+
+
+# ==================================
+# GREETING CONFIGURATION DATABASE
+# ==================================
+
+GREET_FILE = "greet_config.json"
+
+
+def load_greet_config():
+    if not os.path.exists(GREET_FILE):
+        return {}
+
+    try:
+        with open(GREET_FILE, "r") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+greet_data = load_greet_config()
+
+
+def save_greet_config():
+    temporary_file = GREET_FILE + ".tmp"
+
+    with open(temporary_file, "w") as file:
+        json.dump(greet_data, file, indent=4)
+
+    os.replace(temporary_file, GREET_FILE)
+
+
+def get_greet_config(guild_id):
+    server_id = str(guild_id)
+
+    if server_id not in greet_data:
+        greet_data[server_id] = {
+            "channel_id": None,
+            "message": "Welcome {member} to {server}! You are member #{membercount}!"
+        }
+
+        save_greet_config()
+
+    config = greet_data[server_id]
+
+    config.setdefault("channel_id", None)
+    config.setdefault(
+        "message",
+        "Welcome {member} to {server}! You are member #{membercount}!"
+    )
+
+    return config
+
+
+def format_greeting(member, message):
+    return (
+        message
+        .replace("{server}", member.guild.name)
+        .replace("{member}", member.mention)
+        .replace(
+            "{membercount}",
+            str(member.guild.member_count or len(member.guild.members))
+        )
     )
 
 
@@ -1151,6 +1215,81 @@ async def ticketclose_prefix(ctx):
 
 
 # ==================================
+# PREFIX GREETING COMMANDS (!)
+# ==================================
+
+@bot.command(name="greet")
+@commands.has_guild_permissions(manage_guild=True)
+async def greet_prefix(ctx, channel: discord.TextChannel):
+
+    if ctx.guild is None:
+        return
+
+    config = get_greet_config(ctx.guild.id)
+    config["channel_id"] = channel.id
+    save_greet_config()
+
+    await ctx.send(
+        f"✅ Greeting channel set to {channel.mention}!"
+    )
+
+
+@greet_prefix.error
+async def greet_prefix_error(ctx, error):
+
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send(
+            "You need the Manage Server permission to configure greetings."
+        )
+
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(
+            "Usage: `!greet #channel`"
+        )
+
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send(
+            "Please mention a valid text channel."
+        )
+
+
+@bot.command(name="greetmsg")
+@commands.has_guild_permissions(manage_guild=True)
+async def greetmsg_prefix(ctx, *, message: str):
+
+    if ctx.guild is None:
+        return
+
+    if len(message) > 2000:
+        await ctx.send(
+            "Your greeting message must be 2000 characters or fewer."
+        )
+        return
+
+    config = get_greet_config(ctx.guild.id)
+    config["message"] = message
+    save_greet_config()
+
+    await ctx.send(
+        "✅ Greeting message updated!"
+    )
+
+
+@greetmsg_prefix.error
+async def greetmsg_prefix_error(ctx, error):
+
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send(
+            "You need the Manage Server permission to configure greetings."
+        )
+
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send(
+            "Usage: `!greetmsg Hello {member}, welcome to {server}!`"
+        )
+
+
+# ==================================
 # PREFIX COMMANDS (!)
 # ==================================
 
@@ -1523,6 +1662,91 @@ async def ticketclose_slash(interaction: discord.Interaction):
 
 
 # ==================================
+# SLASH GREETING COMMANDS (/)
+# ==================================
+
+@bot.tree.command(
+    name="greet",
+    description="Set the channel for member greetings"
+)
+@app_commands.describe(
+    channel="The channel where greetings should be sent"
+)
+@app_commands.default_permissions(manage_guild=True)
+async def greet_slash(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    if not can_manage_ticket_settings(interaction.user):
+        await interaction.response.send_message(
+            "You need the Manage Server permission to configure greetings.",
+            ephemeral=True
+        )
+        return
+
+    config = get_greet_config(interaction.guild.id)
+    config["channel_id"] = channel.id
+    save_greet_config()
+
+    await interaction.response.send_message(
+        f"✅ Greeting channel set to {channel.mention}!",
+        ephemeral=True
+    )
+
+
+@bot.tree.command(
+    name="greetmsg",
+    description="Set the message sent when someone joins"
+)
+@app_commands.describe(
+    message="Your greeting message. Supports {server}, {member}, and {membercount}"
+)
+@app_commands.default_permissions(manage_guild=True)
+async def greetmsg_slash(
+    interaction: discord.Interaction,
+    message: str
+):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    if not can_manage_ticket_settings(interaction.user):
+        await interaction.response.send_message(
+            "You need the Manage Server permission to configure greetings.",
+            ephemeral=True
+        )
+        return
+
+    if len(message) > 2000:
+        await interaction.response.send_message(
+            "Your greeting message must be 2000 characters or fewer.",
+            ephemeral=True
+        )
+        return
+
+    config = get_greet_config(interaction.guild.id)
+    config["message"] = message
+    save_greet_config()
+
+    await interaction.response.send_message(
+        "✅ Greeting message updated!",
+        ephemeral=True
+    )
+
+
+# ==================================
 # SLASH COMMANDS (/)
 # ==================================
 
@@ -1796,6 +2020,50 @@ async def dog_slash(interaction: discord.Interaction):
 # ==================================
 # BOT EVENTS
 # ==================================
+
+@bot.event
+async def on_member_join(member):
+
+    config = get_greet_config(member.guild.id)
+
+    channel_id = config.get("channel_id")
+
+    if not channel_id:
+        return
+
+    channel = member.guild.get_channel(int(channel_id))
+
+    if channel is None:
+        print(
+            f"Greeting channel {channel_id} was not found "
+            f"in {member.guild.name}."
+        )
+        return
+
+    message = format_greeting(
+        member,
+        config["message"]
+    )
+
+    try:
+        await channel.send(
+            message,
+            allowed_mentions=discord.AllowedMentions(
+                users=True,
+                roles=False,
+                everyone=False
+            )
+        )
+
+    except discord.Forbidden:
+        print(
+            f"I don't have permission to send greetings in "
+            f"#{channel.name}."
+        )
+
+    except discord.HTTPException as error:
+        print("Greeting error:", error)
+
 
 @bot.event
 async def on_ready():
