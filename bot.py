@@ -35,7 +35,6 @@ bot = SpaceDood(command_prefix="!", intents=intents)
 def load_json(filename):
     if not os.path.exists(filename):
         return {}
-
     try:
         with open(filename, "r") as file:
             return json.load(file)
@@ -45,10 +44,8 @@ def load_json(filename):
 
 def save_json(filename, data):
     temporary_file = filename + ".tmp"
-
     with open(temporary_file, "w") as file:
         json.dump(data, file, indent=4)
-
     os.replace(temporary_file, filename)
 
 
@@ -67,10 +64,8 @@ def save_giveaways():
 
 def schedule_giveaway(message_id):
     message_id = str(message_id)
-
     if message_id in giveaway_tasks:
         return
-
     giveaway_tasks[message_id] = asyncio.create_task(
         finish_giveaway(message_id)
     )
@@ -78,10 +73,8 @@ def schedule_giveaway(message_id):
 
 async def finish_giveaway(message_id):
     message_id = str(message_id)
-
     try:
         giveaway = giveaway_data.get(message_id)
-
         if giveaway is None:
             return
 
@@ -93,13 +86,11 @@ async def finish_giveaway(message_id):
             await asyncio.sleep(remaining)
 
         giveaway = giveaway_data.get(message_id)
-
         if giveaway is None:
             return
 
         channel_id = int(giveaway["channel_id"])
         channel = bot.get_channel(channel_id)
-
         if channel is None:
             channel = await bot.fetch_channel(channel_id)
 
@@ -128,7 +119,6 @@ async def finish_giveaway(message_id):
             color=discord.Color.red()
         )
         embed.set_footer(text="Space Dood Giveaways")
-
         await message.edit(embed=embed)
 
         if winner:
@@ -148,16 +138,12 @@ async def finish_giveaway(message_id):
     except discord.NotFound:
         giveaway_data.pop(message_id, None)
         save_giveaways()
-
     except discord.Forbidden as error:
         print("Giveaway permission error:", error)
-
     except discord.HTTPException as error:
         print("Giveaway Discord API error:", error)
-
     except Exception as error:
         print("Giveaway error:", error)
-
     finally:
         giveaway_tasks.pop(message_id, None)
 
@@ -172,7 +158,6 @@ async def start_giveaway(channel, duration, prize):
         datetime.datetime.now(datetime.timezone.utc).timestamp()
         + duration
     )
-
     embed = discord.Embed(
         title="🎉 GIVEAWAY!",
         description=(
@@ -183,7 +168,6 @@ async def start_giveaway(channel, duration, prize):
         color=discord.Color.red()
     )
     embed.set_footer(text="Space Dood Giveaways")
-
     message = await channel.send(embed=embed)
     await message.add_reaction("🎉")
 
@@ -193,10 +177,8 @@ async def start_giveaway(channel, duration, prize):
         "prize": prize,
         "end_time": end_time
     }
-
     save_giveaways()
     schedule_giveaway(message.id)
-
     return message
 
 
@@ -249,7 +231,6 @@ def save_ticket_config():
 
 def get_ticket_config(guild_id):
     server_id = str(guild_id)
-
     if server_id not in ticket_data:
         ticket_data[server_id] = {
             "staff_roles": [],
@@ -260,27 +241,22 @@ def get_ticket_config(guild_id):
     config = ticket_data[server_id]
     config.setdefault("staff_roles", [])
     config.setdefault("category_id", None)
-
     return config
 
 
 def get_ticket_staff_roles(guild):
     config = get_ticket_config(guild.id)
     roles = []
-
     for role_id in config["staff_roles"]:
         role = guild.get_role(int(role_id))
-
         if role is not None:
             roles.append(role)
-
     return roles
 
 
 def is_ticket_staff(member):
     if member.guild is None:
         return False
-
     return any(
         role in member.roles
         for role in get_ticket_staff_roles(member.guild)
@@ -308,7 +284,6 @@ def save_greet_config():
 
 def get_greet_config(guild_id):
     server_id = str(guild_id)
-
     if server_id not in greet_data:
         greet_data[server_id] = {
             "channel_id": None,
@@ -326,7 +301,6 @@ def get_greet_config(guild_id):
         "Welcome {member} to {server}! "
         "You are member #{membercount}!"
     )
-
     return config
 
 
@@ -348,7 +322,6 @@ def format_greeting(member, message):
 
 MODMAIL_CONFIG_FILE = "modmail_config.json"
 MODMAIL_THREADS_FILE = "modmail_threads.json"
-
 modmail_config = load_json(MODMAIL_CONFIG_FILE)
 modmail_threads = load_json(MODMAIL_THREADS_FILE)
 
@@ -363,7 +336,6 @@ def save_modmail_threads():
 
 def get_modmail_config(guild_id):
     server_id = str(guild_id)
-
     if server_id not in modmail_config:
         modmail_config[server_id] = {
             "category_id": None,
@@ -374,7 +346,6 @@ def get_modmail_config(guild_id):
     config = modmail_config[server_id]
     config.setdefault("category_id", None)
     config.setdefault("enabled", False)
-
     return config
 
 
@@ -398,7 +369,6 @@ def remove_modmail_thread(user_id):
 def get_modmail_owner_id(channel):
     if not channel.topic:
         return None
-
     if not channel.topic.startswith("SpaceDoodModmail|"):
         return None
 
@@ -408,7 +378,6 @@ def get_modmail_owner_id(channel):
                 return int(part.replace("owner=", ""))
             except ValueError:
                 return None
-
     return None
 
 
@@ -428,13 +397,10 @@ def is_modmail_staff(member):
 
 async def get_modmail_category(guild):
     config = get_modmail_config(guild.id)
-
     category = None
 
     if config.get("category_id"):
-        category = guild.get_channel(
-            int(config["category_id"])
-        )
+        category = guild.get_channel(int(config["category_id"]))
 
     if category is None:
         category = discord.utils.get(
@@ -475,7 +441,6 @@ async def get_modmail_category(guild):
 
     config["category_id"] = category.id
     save_modmail_config()
-
     return category
 
 
@@ -493,7 +458,6 @@ async def setup_modmail(guild):
 
     try:
         category = await get_modmail_category(guild)
-
         await category.set_permissions(
             guild.default_role,
             view_channel=False
@@ -539,7 +503,6 @@ async def setup_modmail(guild):
             "I need the Manage Channels permission to create "
             "and configure the Modmail category."
         )
-
     except discord.HTTPException as error:
         print("Modmail setup error:", error)
         return False, "Something went wrong while setting up Modmail."
@@ -549,18 +512,14 @@ async def find_modmail_guild():
     for guild_id, config in modmail_config.items():
         if not config.get("enabled", False):
             continue
-
         guild = bot.get_guild(int(guild_id))
-
         if guild is not None:
             return guild
-
     return None
 
 
 async def create_modmail_channel(guild, user):
     category = await get_modmail_category(guild)
-
     if category is None:
         return None
 
@@ -574,16 +533,10 @@ async def create_modmail_channel(guild, user):
     channel = await guild.create_text_channel(
         name=f"modmail-{username[:30]}",
         category=category,
-        topic=(
-            f"SpaceDoodModmail|owner={user.id}|status=open"
-        )
+        topic=f"SpaceDoodModmail|owner={user.id}|status=open"
     )
 
-    save_modmail_thread(
-        user.id,
-        guild.id,
-        channel.id
-    )
+    save_modmail_thread(user.id, guild.id, channel.id)
 
     embed = discord.Embed(
         title="📨 New Modmail Conversation",
@@ -598,30 +551,23 @@ async def create_modmail_channel(guild, user):
         color=discord.Color.red()
     )
     embed.set_thumbnail(url=user.display_avatar.url)
-
     await channel.send(embed=embed)
-
     return channel
 
 
 async def get_active_modmail_channel(user_id):
     thread = get_modmail_thread(user_id)
-
     if thread is None:
         return None
 
     guild = bot.get_guild(int(thread["guild_id"]))
-
     if guild is None:
         return None
 
     channel = guild.get_channel(int(thread["channel_id"]))
-
     if channel is None:
         try:
-            channel = await guild.fetch_channel(
-                int(thread["channel_id"])
-            )
+            channel = await guild.fetch_channel(int(thread["channel_id"]))
         except (discord.NotFound, discord.Forbidden):
             remove_modmail_thread(user_id)
             return None
@@ -639,7 +585,6 @@ async def get_active_modmail_channel(user_id):
 
 async def relay_member_message(message):
     user = message.author
-
     guild = await find_modmail_guild()
 
     if guild is None:
@@ -668,9 +613,7 @@ async def relay_member_message(message):
             return
 
         if channel is None:
-            await user.send(
-                "I couldn't open your Modmail conversation."
-            )
+            await user.send("I couldn't open your Modmail conversation.")
             return
 
         await user.send(
@@ -679,7 +622,6 @@ async def relay_member_message(message):
         )
 
     files = []
-
     for attachment in message.attachments:
         try:
             files.append(await attachment.to_file())
@@ -687,7 +629,6 @@ async def relay_member_message(message):
             print("Couldn't copy a Modmail attachment.")
 
     content = message.content.strip() or "(No text message.)"
-
     embed = discord.Embed(
         title="📩 Member Message",
         description=content[:4000],
@@ -699,10 +640,7 @@ async def relay_member_message(message):
     )
 
     try:
-        await channel.send(
-            embed=embed,
-            files=files
-        )
+        await channel.send(embed=embed, files=files)
     except discord.Forbidden:
         await user.send(
             "I couldn't deliver your message to the staff team. "
@@ -717,24 +655,18 @@ async def relay_member_message(message):
 
 async def send_modmail_reply(channel, staff_member, content, attachments):
     owner_id = get_modmail_owner_id(channel)
-
     if owner_id is None:
         return False, "This isn't a Space Dood Modmail channel."
-
     if is_modmail_closed(channel):
         return False, "This Modmail conversation is already closed."
-
     if not is_modmail_staff(staff_member):
         return False, "You don't have the configured Modmail staff role."
-
     if not content.strip() and not attachments:
         return False, "Please include a message or an attachment."
 
     try:
         user = await bot.fetch_user(owner_id)
-
         files = []
-
         for attachment in attachments:
             files.append(await attachment.to_file())
 
@@ -744,11 +676,7 @@ async def send_modmail_reply(channel, staff_member, content, attachments):
             color=discord.Color.green()
         )
         embed.set_footer(text="Space Dood Modmail")
-
-        await user.send(
-            embed=embed,
-            files=files
-        )
+        await user.send(embed=embed, files=files)
 
         staff_embed = discord.Embed(
             title="📤 Reply Sent",
@@ -759,17 +687,13 @@ async def send_modmail_reply(channel, staff_member, content, attachments):
             name=str(staff_member),
             icon_url=staff_member.display_avatar.url
         )
-
         await channel.send(embed=staff_embed)
-
         return True, f"✅ Your reply was sent to <@{owner_id}>!"
 
     except discord.NotFound:
         return False, "I couldn't find that user."
-
     except discord.Forbidden:
         return False, "I couldn't DM that user. They may have DMs disabled."
-
     except discord.HTTPException as error:
         print("Modmail reply error:", error)
         return False, "Something went wrong while sending the reply."
@@ -777,19 +701,15 @@ async def send_modmail_reply(channel, staff_member, content, attachments):
 
 async def close_modmail(channel, actor):
     owner_id = get_modmail_owner_id(channel)
-
     if owner_id is None:
         return False, "This isn't a Space Dood Modmail channel."
-
     if is_modmail_closed(channel):
         return False, "This Modmail conversation is already closed."
-
     if not is_modmail_staff(actor):
         return False, "You don't have the configured Modmail staff role."
 
     try:
         user = await bot.fetch_user(owner_id)
-
         try:
             await user.send(
                 "🔒 Your Modmail conversation has been closed by the staff team."
@@ -799,18 +719,13 @@ async def close_modmail(channel, actor):
 
         await channel.edit(
             name=f"closed-{channel.name}"[:100],
-            topic=(
-                f"SpaceDoodModmail|owner={owner_id}|status=closed"
-            )
+            topic=f"SpaceDoodModmail|owner={owner_id}|status=closed"
         )
-
         remove_modmail_thread(owner_id)
-
         return True, "🔒 Modmail conversation closed successfully!"
 
     except discord.Forbidden:
         return False, "I don't have permission to edit this channel."
-
     except discord.HTTPException as error:
         print("Modmail close error:", error)
         return False, "Something went wrong while closing Modmail."
@@ -830,7 +745,6 @@ def save_tempvoice():
 
 def get_tempvoice_config(guild_id):
     server_id = str(guild_id)
-
     if server_id not in tempvoice_data:
         tempvoice_data[server_id] = {
             "generator_id": None,
@@ -841,14 +755,12 @@ def get_tempvoice_config(guild_id):
     config = tempvoice_data[server_id]
     config.setdefault("generator_id", None)
     config.setdefault("channels", {})
-
     return config
 
 
 async def delete_tempvoice_channel(guild, channel_id):
     config = get_tempvoice_config(guild.id)
     channel_id = str(channel_id)
-
     channel = guild.get_channel(int(channel_id))
 
     if channel is None:
@@ -858,17 +770,14 @@ async def delete_tempvoice_channel(guild, channel_id):
 
     try:
         await channel.delete(reason="Temporary voice channel is empty.")
-
     except discord.NotFound:
         pass
-
     except discord.Forbidden:
         print(
             f"I don't have permission to delete temp voice channel "
             f"{channel_id}."
         )
         return
-
     except discord.HTTPException as error:
         print("Tempvoice deletion error:", error)
         return
@@ -923,7 +832,6 @@ async def get_ticket_category(guild):
 
     config["category_id"] = category.id
     save_ticket_config()
-
     return category
 
 
@@ -933,7 +841,6 @@ async def get_ticket_category(guild):
 
 async def create_ticket_channel(guild, member):
     category = await get_ticket_category(guild)
-
     overwrites = {
         guild.default_role: discord.PermissionOverwrite(
             view_channel=False
@@ -987,13 +894,11 @@ async def create_ticket_channel(guild, member):
         ),
         color=discord.Color.red()
     )
-
     await channel.send(
         content=member.mention,
         embed=embed,
         view=TicketCloseView()
     )
-
     return channel
 
 
@@ -1013,7 +918,6 @@ async def update_ticket_role_permissions(guild, role, adding):
             embed_links=True
         )
         await category.set_permissions(role, overwrite=overwrite)
-
     else:
         await category.set_permissions(role, overwrite=None)
 
@@ -1045,7 +949,6 @@ def get_ticket_owner_id(channel):
                 return int(part.replace("owner=", ""))
             except ValueError:
                 return None
-
     return None
 
 
@@ -1061,21 +964,17 @@ async def close_ticket_channel(guild, actor, channel):
         return False, "This is not a text channel."
 
     owner_id = get_ticket_owner_id(channel)
-
     if owner_id is None:
         return False, "This channel is not a Space Dood ticket."
-
     if is_ticket_closed(channel):
         return False, "This ticket is already closed."
 
     is_owner = actor.id == owner_id
     is_staff = is_ticket_staff(actor)
-
     if not is_owner and not is_staff:
         return False, "You don't have permission to close this ticket."
 
     owner = guild.get_member(owner_id)
-
     if owner is not None:
         await channel.set_permissions(
             owner,
@@ -1088,7 +987,6 @@ async def close_ticket_channel(guild, actor, channel):
         name=f"closed-{channel.name}"[:100],
         topic=f"SpaceDoodTicket|owner={owner_id}|status=closed"
     )
-
     return True, "🔒 Ticket closed successfully!"
 
 
@@ -1114,25 +1012,21 @@ class TicketPanelView(discord.ui.View):
             return
 
         await interaction.response.defer(ephemeral=True)
-
         try:
             channel = await create_ticket_channel(
                 interaction.guild,
                 interaction.user
             )
-
             await interaction.followup.send(
                 f"🎫 Your ticket has been created: {channel.mention}",
                 ephemeral=True
             )
-
         except discord.Forbidden:
             await interaction.followup.send(
                 "I don't have permission to create ticket channels. "
                 "Check my Manage Channels permission.",
                 ephemeral=True
             )
-
         except discord.HTTPException as error:
             print("Ticket creation error:", error)
             await interaction.followup.send(
@@ -1200,9 +1094,7 @@ def create_ticket_panel():
 async def check_balance(guild, member):
     if guild is None:
         return "This command can only be used in a server."
-
     account = get_account(guild.id, member.id)
-
     return (
         f"💰 **{member.display_name}'s balance:** "
         f"{account['balance']:,} SC"
@@ -1220,17 +1112,12 @@ async def claim_daily(guild, member):
         last_daily = datetime.datetime.fromisoformat(
             account["last_daily"]
         )
-
         if now - last_daily < datetime.timedelta(days=1):
             remaining = datetime.timedelta(days=1) - (
                 now - last_daily
             )
-
             hours = int(remaining.total_seconds() // 3600)
-            minutes = int(
-                (remaining.total_seconds() % 3600) // 60
-            )
-
+            minutes = int((remaining.total_seconds() % 3600) // 60)
             return (
                 "⏳ You've already claimed your daily reward!\n"
                 f"Come back in **{hours}h {minutes}m**."
@@ -1240,43 +1127,35 @@ async def claim_daily(guild, member):
     account["balance"] += reward
     account["last_daily"] = now.isoformat()
     save_currency()
-
     return f"🎁 You claimed **{reward} SC**!"
 
 
 async def work(guild, member):
     if guild is None:
         return "This command can only be used in a server."
-
     reward = random.randint(20, 75)
     add_money(guild.id, member.id, reward)
-
     return f"💼 You worked and earned **{reward} SC**!"
 
 
 async def pay_member(guild, sender, receiver, amount):
     if guild is None:
         return "This command can only be used in a server."
-
     if receiver.bot:
         return "You can't send money to bots!"
-
     if sender.id == receiver.id:
         return "You can't send money to yourself!"
-
     if amount <= 0:
         return "The amount must be greater than zero."
 
     sender_account = get_account(guild.id, sender.id)
     receiver_account = get_account(guild.id, receiver.id)
-
     if sender_account["balance"] < amount:
         return "You don't have enough SC!"
 
     sender_account["balance"] -= amount
     receiver_account["balance"] += amount
     save_currency()
-
     return (
         f"💸 {sender.mention} sent **{amount:,} SC** "
         f"to {receiver.mention}!"
@@ -1289,7 +1168,6 @@ async def pay_member(guild, sender, receiver, amount):
 
 def create_leaderboard(guild):
     server = currency_data.get(str(guild.id), {})
-
     if not server:
         return None
 
@@ -1303,7 +1181,6 @@ def create_leaderboard(guild):
         title=f"🏆 {guild.name} Leaderboard",
         color=discord.Color.gold()
     )
-
     medals = ["🥇", "🥈", "🥉"]
     lines = []
 
@@ -1316,7 +1193,6 @@ def create_leaderboard(guild):
             if position <= 3
             else f"**{position}.**"
         )
-
         lines.append(
             f"{medal} <@{user_id}> — "
             f"**{account['balance']:,} SC**"
@@ -1324,7 +1200,6 @@ def create_leaderboard(guild):
 
     embed.description = "\n".join(lines)
     embed.set_footer(text="Space Dood Economy")
-
     return embed
 
 
@@ -1340,7 +1215,6 @@ async def get_animal_image(animal):
 
     try:
         timeout = aiohttp.ClientTimeout(total=15)
-
         async with aiohttp.ClientSession() as session:
             async with session.get(
                 urls[animal],
@@ -1348,12 +1222,9 @@ async def get_animal_image(animal):
             ) as response:
                 if response.status != 200:
                     return None
-
                 data = await response.json()
-
                 if animal == "cat":
                     return data[0]["url"]
-
                 return data["message"]
 
     except (
@@ -1373,21 +1244,16 @@ async def get_animal_image(animal):
 def check_moderation(guild, actor, target, permission):
     if guild is None:
         return "This command can only be used in a server."
-
     if not getattr(actor.guild_permissions, permission):
         return "You don't have permission to do that."
-
     if target.id == actor.id:
         return "You can't moderate yourself!"
-
     if target.id == guild.owner_id:
         return "You can't moderate the server owner."
 
     bot_member = guild.me
-
     if bot_member is None:
         return "I couldn't find my own server member."
-
     if not getattr(bot_member.guild_permissions, permission):
         return "I don't have the required server permission."
 
@@ -1452,7 +1318,6 @@ async def moderate(
         target,
         permission
     )
-
     if error:
         return error
 
@@ -1460,11 +1325,9 @@ async def moderate(
         if action == "kick":
             await target.kick(reason=reason)
             return f"Successfully kicked {target}."
-
         if action == "ban":
             await target.ban(reason=reason)
             return f"Successfully banned {target}."
-
         if action == "timeout":
             await target.timeout(
                 datetime.timedelta(minutes=minutes),
@@ -1480,7 +1343,6 @@ async def moderate(
             "Discord denied that action. "
             "Check permissions and role hierarchy."
         )
-
     except discord.HTTPException as error:
         print("Discord API error:", error)
         return "Something went wrong while contacting Discord."
@@ -1493,16 +1355,13 @@ async def moderate(
 async def warn_member(guild, actor, target, reason):
     if guild is None:
         return "This command can only be used in a server."
-
     if not actor.guild_permissions.manage_messages:
         return (
             "You need the Manage Messages permission "
             "to warn members."
         )
-
     if target.id == actor.id:
         return "You can't warn yourself!"
-
     if target.bot:
         return "You can't warn a bot!"
 
@@ -1512,18 +1371,15 @@ async def warn_member(guild, actor, target, reason):
             f"**Reason:** {reason}\n"
             f"**Moderator:** {actor}"
         )
-
         return (
             f"⚠️ Successfully warned {target.mention}. "
             "Their DM was sent!"
         )
-
     except discord.Forbidden:
         return (
             f"⚠️ {target.mention} was not warned because "
             "I couldn't DM them. They may have DMs disabled."
         )
-
     except discord.HTTPException as error:
         print("Warning DM error:", error)
         return "Something went wrong while trying to send the warning DM."
@@ -1587,7 +1443,6 @@ async def create_poll(
         ("1️⃣", answer1),
         ("2️⃣", answer2)
     ]
-
     if answer3:
         answers.append(("3️⃣", answer3))
 
@@ -1596,21 +1451,17 @@ async def create_poll(
         description="React below to vote!",
         color=discord.Color.blurple()
     )
-
     for emoji, answer in answers:
         embed.add_field(
             name=emoji,
             value=answer,
             inline=False
         )
-
     embed.set_footer(text="Space Dood Poll")
 
     message = await channel.send(embed=embed)
-
     for emoji, answer in answers:
         await message.add_reaction(emoji)
-
     return message
 
 
@@ -1623,27 +1474,14 @@ def create_userinfo_embed(member):
         title=f"User Information: {member}",
         color=discord.Color.blurple()
     )
-
     embed.set_thumbnail(url=member.display_avatar.url)
-
-    embed.add_field(
-        name="Username",
-        value=member.name,
-        inline=True
-    )
-
+    embed.add_field(name="Username", value=member.name, inline=True)
     embed.add_field(
         name="Display Name",
         value=member.display_name,
         inline=True
     )
-
-    embed.add_field(
-        name="User ID",
-        value=member.id,
-        inline=False
-    )
-
+    embed.add_field(name="User ID", value=member.id, inline=False)
     embed.add_field(
         name="Account Created",
         value=discord.utils.format_dt(member.created_at, style="F"),
@@ -1655,13 +1493,11 @@ def create_userinfo_embed(member):
         if member.joined_at
         else "Unknown"
     )
-
     embed.add_field(
         name="Joined Server",
         value=join_date,
         inline=False
     )
-
     embed.add_field(
         name="Highest Role",
         value=member.top_role.mention,
@@ -1673,9 +1509,7 @@ def create_userinfo_embed(member):
         for name, allowed in member.guild_permissions
         if allowed
     ]
-
     permission_text = ", ".join(permissions)
-
     if len(permission_text) > 1000:
         permission_text = permission_text[:997] + "..."
 
@@ -1684,9 +1518,7 @@ def create_userinfo_embed(member):
         value=permission_text or "None",
         inline=False
     )
-
     embed.set_footer(text=f"User ID: {member.id}")
-
     return embed
 
 
@@ -1699,80 +1531,54 @@ def create_serverinfo_embed(guild):
         title=f"Server Information: {guild.name}",
         color=discord.Color.blurple()
     )
-
     if guild.icon:
         embed.set_thumbnail(url=guild.icon.url)
 
     owner = guild.owner
-
-    embed.add_field(
-        name="Server Name",
-        value=guild.name,
-        inline=True
-    )
-
-    embed.add_field(
-        name="Server ID",
-        value=str(guild.id),
-        inline=True
-    )
-
+    embed.add_field(name="Server Name", value=guild.name, inline=True)
+    embed.add_field(name="Server ID", value=str(guild.id), inline=True)
     embed.add_field(
         name="Owner",
         value=owner.mention if owner else "Unknown",
         inline=False
     )
-
     embed.add_field(
         name="Created",
         value=discord.utils.format_dt(guild.created_at, style="F"),
         inline=False
     )
-
     embed.add_field(
         name="Members",
         value=str(guild.member_count or len(guild.members)),
         inline=True
     )
-
-    embed.add_field(
-        name="Roles",
-        value=str(len(guild.roles)),
-        inline=True
-    )
-
+    embed.add_field(name="Roles", value=str(len(guild.roles)), inline=True)
     embed.add_field(
         name="Text Channels",
         value=str(len(guild.text_channels)),
         inline=True
     )
-
     embed.add_field(
         name="Voice Channels",
         value=str(len(guild.voice_channels)),
         inline=True
     )
-
     embed.add_field(
         name="Categories",
         value=str(len(guild.categories)),
         inline=True
     )
-
     embed.add_field(
         name="Boosts",
         value=str(guild.premium_subscription_count or 0),
         inline=True
     )
-
     embed.add_field(
         name="Boost Level",
         value=f"Level {guild.premium_tier}",
         inline=True
     )
-
     embed.set_footer(text=f"Server ID: {guild.id}")
-
     return embed
 
 
@@ -1785,7 +1591,6 @@ async def ticketrole_prefix(ctx, action: str, role: discord.Role):
     if ctx.guild is None:
         await ctx.send("This command can only be used in a server.")
         return
-
     if not can_manage_ticket_settings(ctx.author):
         await ctx.send(
             "You need the Manage Server permission "
@@ -1794,18 +1599,12 @@ async def ticketrole_prefix(ctx, action: str, role: discord.Role):
         return
 
     config = get_ticket_config(ctx.guild.id)
-
     if action.lower() == "add":
         if str(role.id) in config["staff_roles"]:
             await ctx.send("That role is already a ticket staff role.")
             return
-
         try:
-            await update_ticket_role_permissions(
-                ctx.guild,
-                role,
-                True
-            )
+            await update_ticket_role_permissions(ctx.guild, role, True)
         except discord.Forbidden:
             await ctx.send(
                 "I couldn't update that role's ticket permissions. "
@@ -1815,7 +1614,6 @@ async def ticketrole_prefix(ctx, action: str, role: discord.Role):
 
         config["staff_roles"].append(str(role.id))
         save_ticket_config()
-
         await ctx.send(
             f"✅ {role.mention} is now a ticket staff role! "
             "It has access to existing and future tickets."
@@ -1825,13 +1623,8 @@ async def ticketrole_prefix(ctx, action: str, role: discord.Role):
         if str(role.id) not in config["staff_roles"]:
             await ctx.send("That role isn't a ticket staff role.")
             return
-
         try:
-            await update_ticket_role_permissions(
-                ctx.guild,
-                role,
-                False
-            )
+            await update_ticket_role_permissions(ctx.guild, role, False)
         except discord.Forbidden:
             await ctx.send(
                 "I couldn't remove that role's ticket permissions. "
@@ -1841,11 +1634,9 @@ async def ticketrole_prefix(ctx, action: str, role: discord.Role):
 
         config["staff_roles"].remove(str(role.id))
         save_ticket_config()
-
         await ctx.send(
             f"✅ {role.mention} is no longer a ticket staff role."
         )
-
     else:
         await ctx.send(
             "Usage: `!ticketrole add @Role` or "
@@ -1858,7 +1649,6 @@ async def ticketrole_prefix(ctx, action: str, role: discord.Role):
 async def ticketpanel_prefix(ctx):
     if ctx.guild is None:
         return
-
     try:
         await ctx.send(
             embed=create_ticket_panel(),
@@ -1884,13 +1674,11 @@ async def ticketclose_prefix(ctx):
     if ctx.guild is None:
         await ctx.send("This command can only be used in a server.")
         return
-
     success, message = await close_ticket_channel(
         ctx.guild,
         ctx.author,
         ctx.channel
     )
-
     await ctx.send(message)
 
 
@@ -1903,7 +1691,6 @@ async def ticketclose_prefix(ctx):
 async def modmailsetup_prefix(ctx):
     if ctx.guild is None:
         return
-
     success, message = await setup_modmail(ctx.guild)
     await ctx.send(message)
 
@@ -1921,14 +1708,12 @@ async def reply_prefix(ctx, *, message=""):
     if ctx.guild is None:
         await ctx.send("This command must be used inside a Modmail channel.")
         return
-
     success, result = await send_modmail_reply(
         ctx.channel,
         ctx.author,
         message,
         ctx.message.attachments
     )
-
     await ctx.send(result)
 
 
@@ -1937,12 +1722,7 @@ async def closemail_prefix(ctx):
     if ctx.guild is None:
         await ctx.send("This command must be used inside a Modmail channel.")
         return
-
-    success, message = await close_modmail(
-        ctx.channel,
-        ctx.author
-    )
-
+    success, message = await close_modmail(ctx.channel, ctx.author)
     await ctx.send(message)
 
 
@@ -1955,14 +1735,10 @@ async def closemail_prefix(ctx):
 async def greet_prefix(ctx, channel: discord.TextChannel):
     if ctx.guild is None:
         return
-
     config = get_greet_config(ctx.guild.id)
     config["channel_id"] = channel.id
     save_greet_config()
-
-    await ctx.send(
-        f"✅ Greeting channel set to {channel.mention}!"
-    )
+    await ctx.send(f"✅ Greeting channel set to {channel.mention}!")
 
 
 @greet_prefix.error
@@ -1982,17 +1758,14 @@ async def greet_prefix_error(ctx, error):
 async def greetmsg_prefix(ctx, *, message: str):
     if ctx.guild is None:
         return
-
     if len(message) > 2000:
         await ctx.send(
             "Your greeting message must be 2000 characters or fewer."
         )
         return
-
     config = get_greet_config(ctx.guild.id)
     config["message"] = message
     save_greet_config()
-
     await ctx.send("✅ Greeting message updated!")
 
 
@@ -2017,11 +1790,9 @@ async def greetmsg_prefix_error(ctx, error):
 async def tempvoice_prefix(ctx, channel: discord.VoiceChannel):
     if ctx.guild is None:
         return
-
     config = get_tempvoice_config(ctx.guild.id)
     config["generator_id"] = channel.id
     save_tempvoice()
-
     await ctx.send(
         f"✅ Tempvoice generator set to {channel.mention}!\n"
         "When someone joins that channel, Space Dood will create "
@@ -2082,7 +1853,6 @@ async def timeout_prefix(
     if not 1 <= minutes <= 40320:
         await ctx.send("Timeout must be between 1 and 40320 minutes.")
         return
-
     result = await moderate(
         ctx.guild, ctx.author, member, "timeout", reason, minutes
     )
@@ -2096,9 +1866,7 @@ async def warn_prefix(
     *,
     reason="No reason provided"
 ):
-    result = await warn_member(
-        ctx.guild, ctx.author, member, reason
-    )
+    result = await warn_member(ctx.guild, ctx.author, member, reason)
     await ctx.send(result)
 
 
@@ -2120,37 +1888,28 @@ async def giveaway_prefix(ctx, duration: int, *, prize: str):
     if ctx.guild is None:
         await ctx.send("Giveaways can only be started in a server.")
         return
-
     if not ctx.author.guild_permissions.manage_guild:
         await ctx.send(
             "You need the Manage Server permission to start giveaways."
         )
         return
-
     if not 10 <= duration <= 604800:
         await ctx.send(
             "Giveaway duration must be between 10 and 604800 seconds."
         )
         return
-
     if not prize.strip():
         await ctx.send("Please provide a prize.")
         return
 
     try:
-        message = await start_giveaway(
-            ctx.channel, duration, prize
-        )
-        await ctx.send(
-            f"🎉 Giveaway started! {message.jump_url}"
-        )
-
+        message = await start_giveaway(ctx.channel, duration, prize)
+        await ctx.send(f"🎉 Giveaway started! {message.jump_url}")
     except discord.Forbidden:
         await ctx.send(
             "I need permission to send messages, embed links, "
             "and add reactions to start a giveaway."
         )
-
     except discord.HTTPException as error:
         print("Giveaway start error:", error)
         await ctx.send(
@@ -2170,7 +1929,6 @@ async def poll_prefix(
     if ctx.guild is None:
         await ctx.send("Polls can only be created in a server.")
         return
-
     try:
         await create_poll(
             ctx.channel,
@@ -2179,17 +1937,13 @@ async def poll_prefix(
             answer2,
             answer3
         )
-
     except discord.Forbidden:
         await ctx.send(
             "I need permission to send messages and add reactions here."
         )
-
     except discord.HTTPException as error:
         print("Poll error:", error)
-        await ctx.send(
-            "Something went wrong while creating the poll."
-        )
+        await ctx.send("Something went wrong while creating the poll.")
 
 
 @bot.command(name="say")
@@ -2205,7 +1959,6 @@ async def userinfo_prefix(ctx, member: discord.Member = None):
     if ctx.guild is None:
         await ctx.send("This command can only be used in a server.")
         return
-
     member = member or ctx.author
     await ctx.send(embed=create_userinfo_embed(member))
 
@@ -2215,36 +1968,27 @@ async def serverinfo_prefix(ctx):
     if ctx.guild is None:
         await ctx.send("This command can only be used in a server.")
         return
-
     await ctx.send(embed=create_serverinfo_embed(ctx.guild))
 
 
 @bot.command(name="balance")
 async def balance_prefix(ctx):
-    await ctx.send(
-        await check_balance(ctx.guild, ctx.author)
-    )
+    await ctx.send(await check_balance(ctx.guild, ctx.author))
 
 
 @bot.command(name="daily")
 async def daily_prefix(ctx):
-    await ctx.send(
-        await claim_daily(ctx.guild, ctx.author)
-    )
+    await ctx.send(await claim_daily(ctx.guild, ctx.author))
 
 
 @bot.command(name="work")
 async def work_prefix(ctx):
-    await ctx.send(
-        await work(ctx.guild, ctx.author)
-    )
+    await ctx.send(await work(ctx.guild, ctx.author))
 
 
 @bot.command(name="pay")
 async def pay_prefix(ctx, member: discord.Member, amount: int):
-    result = await pay_member(
-        ctx.guild, ctx.author, member, amount
-    )
+    result = await pay_member(ctx.guild, ctx.author, member, amount)
     await ctx.send(result)
 
 
@@ -2253,47 +1997,38 @@ async def leaderboard_prefix(ctx):
     if ctx.guild is None:
         await ctx.send("This command can only be used in a server.")
         return
-
     embed = create_leaderboard(ctx.guild)
-
     if embed is None:
         await ctx.send("Nobody has earned any Space Coins yet!")
         return
-
     await ctx.send(embed=embed)
 
 
 @bot.command(name="cat")
 async def cat_prefix(ctx):
     image_url = await get_animal_image("cat")
-
     if image_url is None:
         await ctx.send("Couldn't find a cat picture. Try again!")
         return
-
     embed = discord.Embed(
         title="🐱 Here's a cute cat!",
         color=discord.Color.blurple()
     )
     embed.set_image(url=image_url)
-
     await ctx.send(embed=embed)
 
 
 @bot.command(name="dog")
 async def dog_prefix(ctx):
     image_url = await get_animal_image("dog")
-
     if image_url is None:
         await ctx.send("Couldn't find a dog picture. Try again!")
         return
-
     embed = discord.Embed(
         title="🐶 Here's a cute dog!",
         color=discord.Color.blurple()
     )
     embed.set_image(url=image_url)
-
     await ctx.send(embed=embed)
 
 
@@ -2326,7 +2061,6 @@ async def ticketrole_slash(
             ephemeral=True
         )
         return
-
     if not can_manage_ticket_settings(interaction.user):
         await interaction.response.send_message(
             "You need the Manage Server permission "
@@ -2344,9 +2078,7 @@ async def ticketrole_slash(
                 ephemeral=True
             )
             return
-
         await interaction.response.defer(ephemeral=True)
-
         try:
             await update_ticket_role_permissions(
                 interaction.guild, role, True
@@ -2358,10 +2090,8 @@ async def ticketrole_slash(
                 ephemeral=True
             )
             return
-
         config["staff_roles"].append(str(role.id))
         save_ticket_config()
-
         await interaction.followup.send(
             f"✅ {role.mention} is now a ticket staff role! "
             "It has access to existing and future tickets.",
@@ -2375,9 +2105,7 @@ async def ticketrole_slash(
                 ephemeral=True
             )
             return
-
         await interaction.response.defer(ephemeral=True)
-
         try:
             await update_ticket_role_permissions(
                 interaction.guild, role, False
@@ -2389,10 +2117,8 @@ async def ticketrole_slash(
                 ephemeral=True
             )
             return
-
         config["staff_roles"].remove(str(role.id))
         save_ticket_config()
-
         await interaction.followup.send(
             f"✅ {role.mention} is no longer a ticket staff role.",
             ephemeral=True
@@ -2411,7 +2137,6 @@ async def ticketpanel_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     if not can_manage_ticket_settings(interaction.user):
         await interaction.response.send_message(
             "You need the Manage Server permission "
@@ -2419,18 +2144,15 @@ async def ticketpanel_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     try:
         await interaction.channel.send(
             embed=create_ticket_panel(),
             view=TicketPanelView()
         )
-
         await interaction.response.send_message(
             "🎫 Ticket panel created!",
             ephemeral=True
         )
-
     except discord.Forbidden:
         await interaction.response.send_message(
             "I need permission to send messages and embed links here.",
@@ -2449,17 +2171,12 @@ async def ticketclose_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     success, message = await close_ticket_channel(
         interaction.guild,
         interaction.user,
         interaction.channel
     )
-
-    await interaction.response.send_message(
-        message,
-        ephemeral=True
-    )
+    await interaction.response.send_message(message, ephemeral=True)
 
 
 # ==================================
@@ -2478,22 +2195,15 @@ async def modmailsetup_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message(
             "You need the Manage Server permission to set up Modmail.",
             ephemeral=True
         )
         return
-
     await interaction.response.defer(ephemeral=True)
-
     success, message = await setup_modmail(interaction.guild)
-
-    await interaction.followup.send(
-        message,
-        ephemeral=True
-    )
+    await interaction.followup.send(message, ephemeral=True)
 
 
 @bot.tree.command(
@@ -2501,28 +2211,20 @@ async def modmailsetup_slash(interaction: discord.Interaction):
     description="Reply to the member in this Modmail conversation"
 )
 @app_commands.describe(message="The message to send to the member")
-async def reply_slash(
-    interaction: discord.Interaction,
-    message: str
-):
+async def reply_slash(interaction: discord.Interaction, message: str):
     if interaction.guild is None:
         await interaction.response.send_message(
             "This command must be used inside a Modmail channel.",
             ephemeral=True
         )
         return
-
     success, result = await send_modmail_reply(
         interaction.channel,
         interaction.user,
         message,
         []
     )
-
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(
@@ -2536,16 +2238,11 @@ async def closemail_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     success, message = await close_modmail(
         interaction.channel,
         interaction.user
     )
-
-    await interaction.response.send_message(
-        message,
-        ephemeral=True
-    )
+    await interaction.response.send_message(message, ephemeral=True)
 
 
 # ==================================
@@ -2570,7 +2267,6 @@ async def greet_slash(
             ephemeral=True
         )
         return
-
     if not can_manage_ticket_settings(interaction.user):
         await interaction.response.send_message(
             "You need the Manage Server permission "
@@ -2578,11 +2274,9 @@ async def greet_slash(
             ephemeral=True
         )
         return
-
     config = get_greet_config(interaction.guild.id)
     config["channel_id"] = channel.id
     save_greet_config()
-
     await interaction.response.send_message(
         f"✅ Greeting channel set to {channel.mention}!",
         ephemeral=True
@@ -2600,17 +2294,13 @@ async def greet_slash(
     )
 )
 @app_commands.default_permissions(manage_guild=True)
-async def greetmsg_slash(
-    interaction: discord.Interaction,
-    message: str
-):
+async def greetmsg_slash(interaction: discord.Interaction, message: str):
     if interaction.guild is None:
         await interaction.response.send_message(
             "This command can only be used in a server.",
             ephemeral=True
         )
         return
-
     if not can_manage_ticket_settings(interaction.user):
         await interaction.response.send_message(
             "You need the Manage Server permission "
@@ -2618,18 +2308,15 @@ async def greetmsg_slash(
             ephemeral=True
         )
         return
-
     if len(message) > 2000:
         await interaction.response.send_message(
             "Your greeting message must be 2000 characters or fewer.",
             ephemeral=True
         )
         return
-
     config = get_greet_config(interaction.guild.id)
     config["message"] = message
     save_greet_config()
-
     await interaction.response.send_message(
         "✅ Greeting message updated!",
         ephemeral=True
@@ -2658,24 +2345,156 @@ async def tempvoice_slash(
             ephemeral=True
         )
         return
-
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message(
             "You need the Manage Server permission to configure Tempvoice.",
             ephemeral=True
         )
         return
-
     config = get_tempvoice_config(interaction.guild.id)
     config["generator_id"] = channel.id
     save_tempvoice()
-
     await interaction.response.send_message(
         f"✅ Tempvoice generator set to {channel.mention}!\n"
         "When someone joins that channel, Space Dood will create "
         "a temporary voice channel for them.",
         ephemeral=True
     )
+
+
+# ==================================
+# ROCK PAPER SCISSORS
+# ==================================
+
+# Only one player waits at a time.
+# This queue resets when the bot restarts.
+rps_waiting_player = None
+rps_lock = asyncio.Lock()
+
+
+def get_rps_winner(choice1, choice2):
+    if choice1 == choice2:
+        return None
+
+    winning_combinations = {
+        "rock": "scissors",
+        "paper": "rock",
+        "scissors": "paper"
+    }
+
+    if winning_combinations[choice1] == choice2:
+        return 1
+
+    return 2
+
+
+@bot.tree.command(
+    name="rps",
+    description="Play Rock Paper Scissors against another player"
+)
+@app_commands.describe(choice="Choose rock, paper, or scissors")
+@app_commands.choices(
+    choice=[
+        app_commands.Choice(name="Rock", value="rock"),
+        app_commands.Choice(name="Paper", value="paper"),
+        app_commands.Choice(name="Scissors", value="scissors")
+    ]
+)
+@app_commands.allowed_contexts(
+    guilds=False,
+    dms=True,
+    private_channels=False
+)
+@app_commands.allowed_installs(
+    guilds=False,
+    users=True
+)
+async def rps_slash(
+    interaction: discord.Interaction,
+    choice: app_commands.Choice[str]
+):
+    global rps_waiting_player
+
+    # Make sure this is a one-to-one DM, not a server or group DM.
+    if not isinstance(interaction.channel, discord.DMChannel):
+        await interaction.response.send_message(
+            "❌ RPS can only be played in a private DM with Space Dood!"
+        )
+        return
+
+    player = interaction.user
+    player_choice = choice.value
+
+    async with rps_lock:
+        # No opponent is waiting yet.
+        if rps_waiting_player is None:
+            rps_waiting_player = {
+                "user_id": player.id,
+                "choice": player_choice
+            }
+
+            await interaction.response.send_message(
+                "🎮 **Rock Paper Scissors!**\n\n"
+                f"Your choice: **{player_choice.title()}**\n\n"
+                "⏳ Waiting for another player..."
+            )
+            return
+
+        # Stop a player from matching against themselves.
+        if rps_waiting_player["user_id"] == player.id:
+            await interaction.response.send_message(
+                "⏳ You're already waiting for an opponent!"
+            )
+            return
+
+        # An opponent was found.
+        opponent_id = rps_waiting_player["user_id"]
+        opponent_choice = rps_waiting_player["choice"]
+        rps_waiting_player = None
+
+    opponent = await bot.fetch_user(opponent_id)
+
+    winner = get_rps_winner(
+        opponent_choice,
+        player_choice
+    )
+
+    if winner is None:
+        result = (
+            "🤝 **IT'S A TIE!**\n\n"
+            f"**{opponent_choice.title()} ({opponent.mention})** "
+            "> "
+            f"**{player_choice.title()} ({player.mention})**"
+        )
+
+    elif winner == 1:
+        result = (
+            f"🏆 **{opponent.mention} WINS!**\n\n"
+            f"**{opponent_choice.title()} ({opponent.mention})** "
+            "> "
+            f"**{player_choice.title()} ({player.mention})**"
+        )
+
+    else:
+        result = (
+            f"🏆 **{player.mention} WINS!**\n\n"
+            f"**{player_choice.title()} ({player.mention})** "
+            "> "
+            f"**{opponent_choice.title()} ({opponent.mention})**"
+        )
+
+    # Send the result to the player who just submitted their choice.
+    await interaction.response.send_message(result)
+
+    # Also send the result to the player who was waiting.
+    try:
+        await opponent.send(result)
+    except discord.Forbidden:
+        print(
+            f"Couldn't DM RPS results to player {opponent_id}."
+        )
+    except discord.HTTPException as error:
+        print("RPS result delivery error:", error)
 
 
 # ==================================
@@ -2699,10 +2518,7 @@ async def kick_slash(
         "kick",
         reason
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(name="ban", description="Ban a member")
@@ -2722,10 +2538,7 @@ async def ban_slash(
         "ban",
         reason
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(name="timeout", description="Timeout a member")
@@ -2748,10 +2561,7 @@ async def timeout_slash(
         reason,
         minutes
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(
@@ -2773,10 +2583,7 @@ async def warn_slash(
         member,
         reason
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(name="joke", description="Tell a random joke")
@@ -2788,9 +2595,7 @@ async def joke_slash(interaction: discord.Interaction):
     name="8ball",
     description="Ask the magic 8ball a question"
 )
-@app_commands.describe(
-    question="What would you like to ask?"
-)
+@app_commands.describe(question="What would you like to ask?")
 async def eightball_slash(
     interaction: discord.Interaction,
     question: str
@@ -2821,14 +2626,12 @@ async def giveaway_slash(
             ephemeral=True
         )
         return
-
     if not interaction.user.guild_permissions.manage_guild:
         await interaction.response.send_message(
             "You need the Manage Server permission to start giveaways.",
             ephemeral=True
         )
         return
-
     if not prize.strip():
         await interaction.response.send_message(
             "Please provide a prize.",
@@ -2837,26 +2640,22 @@ async def giveaway_slash(
         return
 
     await interaction.response.defer(ephemeral=True)
-
     try:
         message = await start_giveaway(
             interaction.channel,
             duration,
             prize
         )
-
         await interaction.followup.send(
             f"🎉 Giveaway started! {message.jump_url}",
             ephemeral=True
         )
-
     except discord.Forbidden:
         await interaction.followup.send(
             "I need permission to send messages, embed links, "
             "and add reactions to start a giveaway.",
             ephemeral=True
         )
-
     except discord.HTTPException as error:
         print("Giveaway start error:", error)
         await interaction.followup.send(
@@ -2885,7 +2684,6 @@ async def poll_slash(
             ephemeral=True
         )
         return
-
     try:
         await create_poll(
             interaction.channel,
@@ -2894,18 +2692,15 @@ async def poll_slash(
             answer2,
             answer3
         )
-
         await interaction.response.send_message(
             "📊 Poll created!",
             ephemeral=True
         )
-
     except discord.Forbidden:
         await interaction.response.send_message(
             "I need permission to send messages and add reactions here.",
             ephemeral=True
         )
-
     except discord.HTTPException as error:
         print("Poll error:", error)
         await interaction.response.send_message(
@@ -2918,9 +2713,7 @@ async def poll_slash(
     name="userinfo",
     description="View information about a server member"
 )
-@app_commands.describe(
-    member="The member to inspect (optional)"
-)
+@app_commands.describe(member="The member to inspect (optional)")
 async def userinfo_slash(
     interaction: discord.Interaction,
     member: discord.Member = None
@@ -2931,9 +2724,7 @@ async def userinfo_slash(
             ephemeral=True
         )
         return
-
     member = member or interaction.user
-
     await interaction.response.send_message(
         embed=create_userinfo_embed(member),
         ephemeral=True
@@ -2951,7 +2742,6 @@ async def serverinfo_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     await interaction.response.send_message(
         embed=create_serverinfo_embed(interaction.guild),
         ephemeral=True
@@ -2967,10 +2757,7 @@ async def balance_slash(interaction: discord.Interaction):
         interaction.guild,
         interaction.user
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(
@@ -2982,10 +2769,7 @@ async def daily_slash(interaction: discord.Interaction):
         interaction.guild,
         interaction.user
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(
@@ -2997,10 +2781,7 @@ async def work_slash(interaction: discord.Interaction):
         interaction.guild,
         interaction.user
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(
@@ -3022,10 +2803,7 @@ async def pay_slash(
         member,
         amount
     )
-    await interaction.response.send_message(
-        result,
-        ephemeral=True
-    )
+    await interaction.response.send_message(result, ephemeral=True)
 
 
 @bot.tree.command(
@@ -3039,16 +2817,13 @@ async def leaderboard_slash(interaction: discord.Interaction):
             ephemeral=True
         )
         return
-
     embed = create_leaderboard(interaction.guild)
-
     if embed is None:
         await interaction.response.send_message(
             "Nobody has earned any Space Coins yet!",
             ephemeral=True
         )
         return
-
     await interaction.response.send_message(embed=embed)
 
 
@@ -3058,21 +2833,17 @@ async def leaderboard_slash(interaction: discord.Interaction):
 )
 async def cat_slash(interaction: discord.Interaction):
     await interaction.response.defer()
-
     image_url = await get_animal_image("cat")
-
     if image_url is None:
         await interaction.followup.send(
             "Couldn't find a cat picture. Try again!"
         )
         return
-
     embed = discord.Embed(
         title="🐱 Here's a cute cat!",
         color=discord.Color.blurple()
     )
     embed.set_image(url=image_url)
-
     await interaction.followup.send(embed=embed)
 
 
@@ -3082,21 +2853,17 @@ async def cat_slash(interaction: discord.Interaction):
 )
 async def dog_slash(interaction: discord.Interaction):
     await interaction.response.defer()
-
     image_url = await get_animal_image("dog")
-
     if image_url is None:
         await interaction.followup.send(
             "Couldn't find a dog picture. Try again!"
         )
         return
-
     embed = discord.Embed(
         title="🐶 Here's a cute dog!",
         color=discord.Color.blurple()
     )
     embed.set_image(url=image_url)
-
     await interaction.followup.send(embed=embed)
 
 
@@ -3108,11 +2875,9 @@ async def dog_slash(interaction: discord.Interaction):
 async def on_message(message):
     if message.author.bot:
         return
-
     if isinstance(message.channel, discord.DMChannel):
         await relay_member_message(message)
         return
-
     await bot.process_commands(message)
 
 
@@ -3120,12 +2885,10 @@ async def on_message(message):
 async def on_member_join(member):
     config = get_greet_config(member.guild.id)
     channel_id = config.get("channel_id")
-
     if not channel_id:
         return
 
     channel = member.guild.get_channel(int(channel_id))
-
     if channel is None:
         print(
             f"Greeting channel {channel_id} was not found "
@@ -3133,11 +2896,7 @@ async def on_member_join(member):
         )
         return
 
-    message = format_greeting(
-        member,
-        config["message"]
-    )
-
+    message = format_greeting(member, config["message"])
     try:
         await channel.send(
             message,
@@ -3147,13 +2906,11 @@ async def on_member_join(member):
                 everyone=False
             )
         )
-
     except discord.Forbidden:
         print(
             f"I don't have permission to send greetings in "
             f"#{channel.name}."
         )
-
     except discord.HTTPException as error:
         print("Greeting error:", error)
 
@@ -3170,26 +2927,18 @@ async def on_voice_state_update(member, before, after):
     guild = member.guild
     config = get_tempvoice_config(guild.id)
 
-    # First, clean up the temporary channel the member left.
     if before.channel is not None:
         old_channel_id = str(before.channel.id)
-
         if old_channel_id in config["channels"]:
             remaining_members = [
                 current_member
                 for current_member in before.channel.members
                 if current_member.id != member.id
             ]
-
             if not remaining_members:
-                await delete_tempvoice_channel(
-                    guild,
-                    old_channel_id
-                )
+                await delete_tempvoice_channel(guild, old_channel_id)
 
-    # Next, check whether the member joined the generator channel.
     generator_id = config.get("generator_id")
-
     if (
         after.channel is None
         or generator_id is None
@@ -3198,16 +2947,12 @@ async def on_voice_state_update(member, before, after):
         return
 
     generator = after.channel
-
     bot_member = guild.me
-
     if bot_member is None:
         return
-
     if not bot_member.guild_permissions.manage_channels:
         print("Tempvoice needs the Manage Channels permission.")
         return
-
     if not bot_member.guild_permissions.move_members:
         print("Tempvoice needs the Move Members permission.")
         return
@@ -3218,11 +2963,9 @@ async def on_voice_state_update(member, before, after):
         for character in username
         if character.isalnum() or character == "-"
     )
-
     channel_name = f"{username[:80]}'s channel"
 
     overwrites = dict(generator.overwrites)
-
     overwrites[member] = discord.PermissionOverwrite(
         view_channel=True,
         connect=True,
@@ -3238,7 +2981,6 @@ async def on_voice_state_update(member, before, after):
             overwrites=overwrites,
             reason=f"Temporary voice channel for {member}"
         )
-
         config["channels"][str(temp_channel.id)] = {
             "owner_id": member.id
         }
@@ -3249,21 +2991,15 @@ async def on_voice_state_update(member, before, after):
                 temp_channel,
                 reason="Created a temporary voice channel."
             )
-
         except (discord.Forbidden, discord.HTTPException) as error:
             print("Tempvoice move error:", error)
-
-            await delete_tempvoice_channel(
-                guild,
-                temp_channel.id
-            )
+            await delete_tempvoice_channel(guild, temp_channel.id)
 
     except discord.Forbidden:
         print(
             "I don't have permission to create or configure "
             "temporary voice channels."
         )
-
     except discord.HTTPException as error:
         print("Tempvoice creation error:", error)
 
@@ -3278,7 +3014,6 @@ async def on_ready():
 # ==================================
 
 token = os.getenv("DISCORD_SECRET")
-
 if not token:
     raise RuntimeError("DISCORD_SECRET is missing!")
 
