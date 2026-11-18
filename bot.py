@@ -17,7 +17,7 @@ async def hello(ctx):
     await ctx.send("Hello!")
 
 # Slash command: /hello
-@bot.tree.command(name="hello", description="Say hello!")
+@bot.tree.command(name="hello", description="Say hello to the bot!")
 async def hello_slash(interaction: discord.Interaction):
     await interaction.response.send_message("Hello!")
 
