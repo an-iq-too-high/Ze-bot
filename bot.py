@@ -18,6 +18,8 @@ intents.message_content = True
 
 class SpaceDood(commands.Bot):
     async def setup_hook(self):
+        self.add_view(TicketPanelView())
+        self.add_view(TicketCloseView())
         await self.tree.sync()
 
 
@@ -58,7 +60,6 @@ def save_currency():
 
 
 def get_account(guild_id, user_id):
-
     server = str(guild_id)
     user = str(user_id)
 
@@ -77,12 +78,454 @@ def get_account(guild_id, user_id):
 
 
 def add_money(guild_id, user_id, amount):
-
     account = get_account(guild_id, user_id)
-
     account["balance"] += amount
-
     save_currency()
+
+
+# ==================================
+# TICKET CONFIGURATION DATABASE
+# ==================================
+
+TICKET_FILE = "ticket_config.json"
+
+
+def load_ticket_config():
+    if not os.path.exists(TICKET_FILE):
+        return {}
+
+    try:
+        with open(TICKET_FILE, "r") as file:
+            return json.load(file)
+    except (json.JSONDecodeError, OSError):
+        return {}
+
+
+ticket_data = load_ticket_config()
+
+
+def save_ticket_config():
+    temporary_file = TICKET_FILE + ".tmp"
+
+    with open(temporary_file, "w") as file:
+        json.dump(ticket_data, file, indent=4)
+
+    os.replace(temporary_file, TICKET_FILE)
+
+
+def get_ticket_config(guild_id):
+    server_id = str(guild_id)
+
+    if server_id not in ticket_data:
+        ticket_data[server_id] = {
+            "staff_roles": [],
+            "category_id": None
+        }
+        save_ticket_config()
+
+    config = ticket_data[server_id]
+
+    config.setdefault("staff_roles", [])
+    config.setdefault("category_id", None)
+
+    return config
+
+
+def get_ticket_staff_roles(guild):
+    config = get_ticket_config(guild.id)
+
+    roles = []
+
+    for role_id in config["staff_roles"]:
+        role = guild.get_role(int(role_id))
+
+        if role is not None:
+            roles.append(role)
+
+    return roles
+
+
+def is_ticket_staff(member):
+    if member.guild is None:
+        return False
+
+    staff_roles = get_ticket_staff_roles(member.guild)
+
+    return any(
+        role in member.roles
+        for role in staff_roles
+    )
+
+
+def can_manage_ticket_settings(member):
+    return (
+        member.guild is not None
+        and member.guild_permissions.manage_guild
+    )
+
+
+# ==================================
+# TICKET CATEGORY
+# ==================================
+
+async def get_ticket_category(guild):
+    config = get_ticket_config(guild.id)
+
+    category = None
+
+    if config["category_id"]:
+        category = guild.get_channel(
+            int(config["category_id"])
+        )
+
+    if category is None:
+        category = discord.utils.get(
+            guild.categories,
+            name="Space Dood Tickets"
+        )
+
+    if category is None:
+
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(
+                view_channel=False
+            )
+        }
+
+        bot_member = guild.me
+
+        if bot_member:
+            overwrites[bot_member] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                manage_channels=True,
+                read_message_history=True
+            )
+
+        for role in get_ticket_staff_roles(guild):
+            overwrites[role] = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True
+            )
+
+        category = await guild.create_category(
+            "Space Dood Tickets",
+            overwrites=overwrites
+        )
+
+    config["category_id"] = category.id
+    save_ticket_config()
+
+    return category
+
+
+# ==================================
+# TICKET CHANNEL CREATION
+# ==================================
+
+async def create_ticket_channel(guild, member):
+
+    category = await get_ticket_category(guild)
+
+    overwrites = {
+        guild.default_role: discord.PermissionOverwrite(
+            view_channel=False
+        ),
+
+        member: discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            attach_files=True,
+            embed_links=True
+        )
+    }
+
+    bot_member = guild.me
+
+    if bot_member:
+        overwrites[bot_member] = discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            manage_channels=True,
+            read_message_history=True
+        )
+
+    for role in get_ticket_staff_roles(guild):
+        overwrites[role] = discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            attach_files=True,
+            embed_links=True
+        )
+
+    username = member.name.lower().replace(" ", "-")
+    username = "".join(
+        character
+        for character in username
+        if character.isalnum() or character == "-"
+    )
+
+    channel = await guild.create_text_channel(
+        name=f"ticket-{username[:30]}",
+        category=category,
+        overwrites=overwrites,
+        topic=f"SpaceDoodTicket|owner={member.id}|status=open"
+    )
+
+    embed = discord.Embed(
+        title="🎫 Ticket Created!",
+        description=(
+            f"Hello {member.mention}!\n\n"
+            "Please describe what you need help with.\n"
+            "A staff member will be with you shortly."
+        ),
+        color=discord.Color.red()
+    )
+
+    await channel.send(
+        content=member.mention,
+        embed=embed,
+        view=TicketCloseView()
+    )
+
+    return channel
+
+
+# ==================================
+# TICKET PERMISSION UPDATES
+# ==================================
+
+async def update_ticket_role_permissions(guild, role, adding):
+
+    category = await get_ticket_category(guild)
+
+    if adding:
+        overwrite = discord.PermissionOverwrite(
+            view_channel=True,
+            send_messages=True,
+            read_message_history=True,
+            attach_files=True,
+            embed_links=True
+        )
+
+        await category.set_permissions(
+            role,
+            overwrite=overwrite
+        )
+
+    else:
+        await category.set_permissions(
+            role,
+            overwrite=None
+        )
+
+    for channel in category.text_channels:
+
+        if adding:
+            overwrite = discord.PermissionOverwrite(
+                view_channel=True,
+                send_messages=True,
+                read_message_history=True,
+                attach_files=True,
+                embed_links=True
+            )
+
+            await channel.set_permissions(
+                role,
+                overwrite=overwrite
+            )
+
+        else:
+            await channel.set_permissions(
+                role,
+                overwrite=None
+            )
+
+
+# ==================================
+# TICKET CLOSING
+# ==================================
+
+def get_ticket_owner_id(channel):
+
+    if not channel.topic:
+        return None
+
+    for part in channel.topic.split("|"):
+        if part.startswith("owner="):
+            try:
+                return int(part.replace("owner=", ""))
+            except ValueError:
+                return None
+
+    return None
+
+
+def is_ticket_closed(channel):
+
+    if not channel.topic:
+        return False
+
+    return "status=closed" in channel.topic
+
+
+async def close_ticket_channel(guild, actor, channel):
+
+    if not isinstance(channel, discord.TextChannel):
+        return False, "This is not a text channel."
+
+    owner_id = get_ticket_owner_id(channel)
+
+    if owner_id is None:
+        return False, "This channel is not a Space Dood ticket."
+
+    if is_ticket_closed(channel):
+        return False, "This ticket is already closed."
+
+    is_owner = actor.id == owner_id
+    is_staff = is_ticket_staff(actor)
+
+    if not is_owner and not is_staff:
+        return False, "You don't have permission to close this ticket."
+
+    owner = guild.get_member(owner_id)
+
+    if owner is not None:
+        await channel.set_permissions(
+            owner,
+            view_channel=True,
+            send_messages=False,
+            read_message_history=True
+        )
+
+    new_topic = f"SpaceDoodTicket|owner={owner_id}|status=closed"
+
+    await channel.edit(
+        name=f"closed-{channel.name}"[:100],
+        topic=new_topic
+    )
+
+    return True, "🔒 Ticket closed successfully!"
+
+
+# ==================================
+# TICKET PANEL VIEW
+# ==================================
+
+class TicketPanelView(discord.ui.View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Press me!",
+        style=discord.ButtonStyle.secondary,
+        custom_id="space_dood:open_ticket"
+    )
+    async def open_ticket(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "Tickets can only be opened in a server.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            channel = await create_ticket_channel(
+                interaction.guild,
+                interaction.user
+            )
+
+            await interaction.followup.send(
+                f"🎫 Your ticket has been created: {channel.mention}",
+                ephemeral=True
+            )
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "I don't have permission to create ticket channels. "
+                "Check my Manage Channels permission.",
+                ephemeral=True
+            )
+
+        except discord.HTTPException as error:
+            print("Ticket creation error:", error)
+
+            await interaction.followup.send(
+                "Something went wrong while creating your ticket.",
+                ephemeral=True
+            )
+
+
+# ==================================
+# TICKET CLOSE VIEW
+# ==================================
+
+class TicketCloseView(discord.ui.View):
+
+    def __init__(self):
+        super().__init__(timeout=None)
+
+    @discord.ui.button(
+        label="Close Ticket",
+        style=discord.ButtonStyle.danger,
+        custom_id="space_dood:close_ticket"
+    )
+    async def close_ticket(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        if interaction.guild is None:
+            await interaction.response.send_message(
+                "This button can only be used in a server.",
+                ephemeral=True
+            )
+            return
+
+        success, message = await close_ticket_channel(
+            interaction.guild,
+            interaction.user,
+            interaction.channel
+        )
+
+        if success:
+            await interaction.response.edit_message(
+                content="🔒 This ticket has been closed.",
+                embed=None,
+                view=None
+            )
+        else:
+            await interaction.response.send_message(
+                message,
+                ephemeral=True
+            )
+
+
+# ==================================
+# TICKET PANEL EMBED
+# ==================================
+
+def create_ticket_panel():
+
+    embed = discord.Embed(
+        title="Tickets!",
+        description="Press the black button to register a ticket!",
+        color=discord.Color.red()
+    )
+
+    return embed
 
 
 # ==================================
@@ -584,6 +1027,130 @@ def create_userinfo_embed(member):
 
 
 # ==================================
+# PREFIX TICKET COMMANDS (!)
+# ==================================
+
+@bot.command(name="ticketrole")
+async def ticketrole_prefix(ctx, action: str, role: discord.Role):
+
+    if ctx.guild is None:
+        await ctx.send("This command can only be used in a server.")
+        return
+
+    if not can_manage_ticket_settings(ctx.author):
+        await ctx.send(
+            "You need the Manage Server permission to configure ticket roles."
+        )
+        return
+
+    config = get_ticket_config(ctx.guild.id)
+
+    if action.lower() == "add":
+
+        if str(role.id) in config["staff_roles"]:
+            await ctx.send("That role is already a ticket staff role.")
+            return
+
+        try:
+            await update_ticket_role_permissions(
+                ctx.guild,
+                role,
+                True
+            )
+
+        except discord.Forbidden:
+            await ctx.send(
+                "I couldn't update that role's ticket permissions. "
+                "Check my Manage Channels permission."
+            )
+            return
+
+        config["staff_roles"].append(str(role.id))
+        save_ticket_config()
+
+        await ctx.send(
+            f"✅ {role.mention} is now a ticket staff role! "
+            "It has access to existing and future tickets."
+        )
+
+    elif action.lower() == "remove":
+
+        if str(role.id) not in config["staff_roles"]:
+            await ctx.send("That role isn't a ticket staff role.")
+            return
+
+        try:
+            await update_ticket_role_permissions(
+                ctx.guild,
+                role,
+                False
+            )
+
+        except discord.Forbidden:
+            await ctx.send(
+                "I couldn't remove that role's ticket permissions. "
+                "Check my Manage Channels permission."
+            )
+            return
+
+        config["staff_roles"].remove(str(role.id))
+        save_ticket_config()
+
+        await ctx.send(
+            f"✅ {role.mention} is no longer a ticket staff role."
+        )
+
+    else:
+        await ctx.send(
+            "Usage: `!ticketrole add @Role` or `!ticketrole remove @Role`"
+        )
+
+
+@bot.command(name="ticketpanel")
+@commands.has_guild_permissions(manage_guild=True)
+async def ticketpanel_prefix(ctx):
+
+    if ctx.guild is None:
+        return
+
+    try:
+        await ctx.send(
+            embed=create_ticket_panel(),
+            view=TicketPanelView()
+        )
+
+    except discord.Forbidden:
+        await ctx.send(
+            "I need permission to send messages and embed links here."
+        )
+
+
+@ticketpanel_prefix.error
+async def ticketpanel_prefix_error(ctx, error):
+
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send(
+            "You need the Manage Server permission to create a ticket panel."
+        )
+
+
+@bot.command(name="ticketclose")
+async def ticketclose_prefix(ctx):
+
+    if ctx.guild is None:
+        await ctx.send("This command can only be used in a server.")
+        return
+
+    success, message = await close_ticket_channel(
+        ctx.guild,
+        ctx.author,
+        ctx.channel
+    )
+
+    await ctx.send(message)
+
+
+# ==================================
 # PREFIX COMMANDS (!)
 # ==================================
 
@@ -636,7 +1203,6 @@ async def warn_prefix(ctx, member: discord.Member, *, reason="No reason provided
 
 @bot.command(name="joke")
 async def joke_prefix(ctx):
-
     await ctx.send(get_joke())
 
 
@@ -696,7 +1262,6 @@ async def userinfo_prefix(ctx, member: discord.Member = None):
 
 @bot.command(name="balance")
 async def balance_prefix(ctx):
-
     await ctx.send(
         await check_balance(ctx.guild, ctx.author)
     )
@@ -704,7 +1269,6 @@ async def balance_prefix(ctx):
 
 @bot.command(name="daily")
 async def daily_prefix(ctx):
-
     await ctx.send(
         await claim_daily(ctx.guild, ctx.author)
     )
@@ -712,7 +1276,6 @@ async def daily_prefix(ctx):
 
 @bot.command(name="work")
 async def work_prefix(ctx):
-
     await ctx.send(
         await work(ctx.guild, ctx.author)
     )
@@ -783,6 +1346,180 @@ async def dog_prefix(ctx):
     embed.set_image(url=image_url)
 
     await ctx.send(embed=embed)
+
+
+# ==================================
+# SLASH TICKET COMMANDS (/)
+# ==================================
+
+@bot.tree.command(
+    name="ticketrole",
+    description="Add or remove a ticket staff role"
+)
+@app_commands.describe(
+    action="Add or remove the role",
+    role="The role to configure"
+)
+@app_commands.choices(
+    action=[
+        app_commands.Choice(name="add", value="add"),
+        app_commands.Choice(name="remove", value="remove")
+    ]
+)
+async def ticketrole_slash(
+    interaction: discord.Interaction,
+    action: app_commands.Choice[str],
+    role: discord.Role
+):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    if not can_manage_ticket_settings(interaction.user):
+        await interaction.response.send_message(
+            "You need the Manage Server permission to configure ticket roles.",
+            ephemeral=True
+        )
+        return
+
+    config = get_ticket_config(interaction.guild.id)
+
+    if action.value == "add":
+
+        if str(role.id) in config["staff_roles"]:
+            await interaction.response.send_message(
+                "That role is already a ticket staff role.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await update_ticket_role_permissions(
+                interaction.guild,
+                role,
+                True
+            )
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "I couldn't update that role's ticket permissions. "
+                "Check my Manage Channels permission.",
+                ephemeral=True
+            )
+            return
+
+        config["staff_roles"].append(str(role.id))
+        save_ticket_config()
+
+        await interaction.followup.send(
+            f"✅ {role.mention} is now a ticket staff role! "
+            "It has access to existing and future tickets.",
+            ephemeral=True
+        )
+
+    elif action.value == "remove":
+
+        if str(role.id) not in config["staff_roles"]:
+            await interaction.response.send_message(
+                "That role isn't a ticket staff role.",
+                ephemeral=True
+            )
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            await update_ticket_role_permissions(
+                interaction.guild,
+                role,
+                False
+            )
+
+        except discord.Forbidden:
+            await interaction.followup.send(
+                "I couldn't remove that role's ticket permissions. "
+                "Check my Manage Channels permission.",
+                ephemeral=True
+            )
+            return
+
+        config["staff_roles"].remove(str(role.id))
+        save_ticket_config()
+
+        await interaction.followup.send(
+            f"✅ {role.mention} is no longer a ticket staff role.",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(
+    name="ticketpanel",
+    description="Create the ticket panel"
+)
+@app_commands.default_permissions(manage_guild=True)
+async def ticketpanel_slash(interaction: discord.Interaction):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    if not can_manage_ticket_settings(interaction.user):
+        await interaction.response.send_message(
+            "You need the Manage Server permission to create a ticket panel.",
+            ephemeral=True
+        )
+        return
+
+    try:
+        await interaction.channel.send(
+            embed=create_ticket_panel(),
+            view=TicketPanelView()
+        )
+
+        await interaction.response.send_message(
+            "🎫 Ticket panel created!",
+            ephemeral=True
+        )
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I need permission to send messages and embed links here.",
+            ephemeral=True
+        )
+
+
+@bot.tree.command(
+    name="ticketclose",
+    description="Close the ticket in this channel"
+)
+async def ticketclose_slash(interaction: discord.Interaction):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    success, message = await close_ticket_channel(
+        interaction.guild,
+        interaction.user,
+        interaction.channel
+    )
+
+    await interaction.response.send_message(
+        message,
+        ephemeral=True
+    )
 
 
 # ==================================
