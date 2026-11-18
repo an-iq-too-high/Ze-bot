@@ -1,3 +1,4 @@
+
 import os
 import json
 import random
@@ -670,6 +671,15 @@ async def poll_prefix(
     except discord.HTTPException as error:
         print("Poll error:", error)
         await ctx.send("Something went wrong while creating the poll.")
+
+
+@bot.command(name="say")
+async def say_prefix(ctx, *, word: str):
+
+    await ctx.send(
+        word,
+        allowed_mentions=discord.AllowedMentions.none()
+    )
 
 
 @bot.command(name="userinfo")
