@@ -150,6 +150,92 @@ async def moderate(
 
 
 # ==================================
+# USERINFO FUNCTION
+# ==================================
+
+def create_userinfo_embed(member):
+
+    embed = discord.Embed(
+        title=f"User Information: {member}",
+        color=discord.Color.blurple()
+    )
+
+    embed.set_thumbnail(
+        url=member.display_avatar.url
+    )
+
+    embed.add_field(
+        name="Username",
+        value=member.name,
+        inline=True
+    )
+
+    embed.add_field(
+        name="Display Name",
+        value=member.display_name,
+        inline=True
+    )
+
+    embed.add_field(
+        name="User ID",
+        value=member.id,
+        inline=False
+    )
+
+    embed.add_field(
+        name="Account Created",
+        value=discord.utils.format_dt(
+            member.created_at,
+            style="F"
+        ),
+        inline=False
+    )
+
+    if member.joined_at:
+        join_date = discord.utils.format_dt(
+            member.joined_at,
+            style="F"
+        )
+    else:
+        join_date = "Unknown"
+
+    embed.add_field(
+        name="Joined Server",
+        value=join_date,
+        inline=False
+    )
+
+    embed.add_field(
+        name="Highest Role",
+        value=member.top_role.mention,
+        inline=False
+    )
+
+    permissions = [
+        name.replace("_", " ").title()
+        for name, allowed in member.guild_permissions
+        if allowed
+    ]
+
+    permission_text = ", ".join(permissions)
+
+    if len(permission_text) > 1000:
+        permission_text = permission_text[:997] + "..."
+
+    embed.add_field(
+        name="Server Permissions",
+        value=permission_text or "None",
+        inline=False
+    )
+
+    embed.set_footer(
+        text=f"Requested by {member.guild.me.display_name}"
+    )
+
+    return embed
+
+
+# ==================================
 # PREFIX COMMANDS (!)
 # ==================================
 
@@ -216,6 +302,23 @@ async def timeout_prefix(
     )
 
     await ctx.send(result)
+
+
+@bot.command(name="userinfo")
+async def userinfo_prefix(
+    ctx,
+    member: discord.Member = None
+):
+
+    if ctx.guild is None:
+        await ctx.send("This command can only be used in a server.")
+        return
+
+    member = member or ctx.author
+
+    embed = create_userinfo_embed(member)
+
+    await ctx.send(embed=embed)
 
 
 # ==================================
@@ -305,6 +408,35 @@ async def timeout_slash(
 
     await interaction.response.send_message(
         result,
+        ephemeral=True
+    )
+
+
+@bot.tree.command(
+    name="userinfo",
+    description="View information about a server member"
+)
+@app_commands.describe(
+    member="The member to inspect (optional)"
+)
+async def userinfo_slash(
+    interaction: discord.Interaction,
+    member: discord.Member = None
+):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    member = member or interaction.user
+
+    embed = create_userinfo_embed(member)
+
+    await interaction.response.send_message(
+        embed=embed,
         ephemeral=True
     )
 
