@@ -44,6 +44,12 @@ def check_moderation(guild, actor, target, permission):
     if not getattr(bot_member.guild_permissions, permission):
         return "I don't have the required server permission."
 
+        print("SPACE DOOD:", bot_member.top_role.name,
+            bot_member.top_role.position)
+
+        print("TARGET:", target.top_role.name,
+            target.top_role.position)
+
     if bot_member.top_role <= target.top_role:
         return "That member's role is higher than or equal to mine."
 
