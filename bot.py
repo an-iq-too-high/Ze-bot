@@ -482,25 +482,8 @@ async def setup_modmail(guild):
         )
 
     try:
-        print("DEBUG 1: Modmail setup started!")
-
-        try:
-            print("DEBUG 2: Creating/finding category...")
-            category = await get_modmail_category(guild)
-            print("DEBUG 3: Category function finished:", category)
-
-    except discord.Forbidden as error:
-        print("DEBUG: Discord denied the request:", repr(error))
-        raise
-
-    except discord.HTTPException as error:
-        print("DEBUG: Discord API error:", repr(error))
-        raise
-
-    except Exception as error:
-        print("DEBUG: Unexpected error:", repr(error))
-        raise
-
+        category = await get_modmail_category(guild)
+        
         if category is None:
             return False, "I couldn't create the Modmail category."
 
