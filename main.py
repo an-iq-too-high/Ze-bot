@@ -1,4 +1,3 @@
-
 import os
 import json
 import random
@@ -400,6 +399,109 @@ async def moderate(
 
 
 # ==================================
+# WARN FUNCTION
+# ==================================
+
+async def warn_member(guild, actor, target, reason):
+
+    if guild is None:
+        return "This command can only be used in a server."
+
+    if not actor.guild_permissions.manage_messages:
+        return "You need the Manage Messages permission to warn members."
+
+    if target.id == actor.id:
+        return "You can't warn yourself!"
+
+    if target.bot:
+        return "You can't warn a bot!"
+
+    try:
+
+        await target.send(
+            f"⚠️ **You've received a warning in {guild.name}!**\n\n"
+            f"**Reason:** {reason}\n"
+            f"**Moderator:** {actor}"
+        )
+
+        return f"⚠️ Successfully warned {target.mention}. Their DM was sent!"
+
+    except discord.Forbidden:
+        return (
+            f"⚠️ {target.mention} was not warned because "
+            "I couldn't DM them. They may have DMs disabled."
+        )
+
+    except discord.HTTPException as error:
+        print("Warning DM error:", error)
+        return "Something went wrong while trying to send the warning DM."
+
+
+# ==================================
+# JOKE FUNCTION
+# ==================================
+
+JOKES = [
+    "Why did the computer go to the doctor? Because it had a virus! 💻",
+    "Why was the math book sad? It had too many problems! 📚",
+    "What do you call a sleeping dinosaur? A dino-snore! 🦖",
+    "Why did the developer go broke? Because they used up all their cache! 💸",
+    "What do computers eat for a snack? Microchips! 🍟",
+    "Why did the programmer quit their job? They didn't get arrays! 😂",
+    "What is a computer's favorite music? Anything with a good byte! 🎵"
+]
+
+
+def get_joke():
+    return random.choice(JOKES)
+
+
+# ==================================
+# POLL FUNCTION
+# ==================================
+
+async def create_poll(
+    channel,
+    question,
+    answer1,
+    answer2,
+    answer3=None
+):
+
+    answers = [
+        ("1️⃣", answer1),
+        ("2️⃣", answer2)
+    ]
+
+    if answer3:
+        answers.append(("3️⃣", answer3))
+
+    embed = discord.Embed(
+        title="📊 " + question,
+        description="React below to vote!",
+        color=discord.Color.blurple()
+    )
+
+    for emoji, answer in answers:
+        embed.add_field(
+            name=emoji,
+            value=answer,
+            inline=False
+        )
+
+    embed.set_footer(
+        text="Space Dood Poll"
+    )
+
+    message = await channel.send(embed=embed)
+
+    for emoji, answer in answers:
+        await message.add_reaction(emoji)
+
+    return message
+
+
+# ==================================
 # USERINFO FUNCTION
 # ==================================
 
@@ -516,6 +618,58 @@ async def timeout_prefix(ctx, member: discord.Member, minutes: int, *, reason="N
     )
 
     await ctx.send(result)
+
+
+@bot.command(name="warn")
+async def warn_prefix(ctx, member: discord.Member, *, reason="No reason provided"):
+
+    result = await warn_member(
+        ctx.guild,
+        ctx.author,
+        member,
+        reason
+    )
+
+    await ctx.send(result)
+
+
+@bot.command(name="joke")
+async def joke_prefix(ctx):
+
+    await ctx.send(get_joke())
+
+
+@bot.command(name="poll")
+async def poll_prefix(
+    ctx,
+    question: str,
+    answer1: str,
+    answer2: str,
+    *,
+    answer3: str = None
+):
+
+    if ctx.guild is None:
+        await ctx.send("Polls can only be created in a server.")
+        return
+
+    try:
+        await create_poll(
+            ctx.channel,
+            question,
+            answer1,
+            answer2,
+            answer3
+        )
+
+    except discord.Forbidden:
+        await ctx.send(
+            "I need permission to send messages and add reactions here."
+        )
+
+    except discord.HTTPException as error:
+        print("Poll error:", error)
+        await ctx.send("Something went wrong while creating the poll.")
 
 
 @bot.command(name="userinfo")
@@ -656,6 +810,90 @@ async def timeout_slash(interaction: discord.Interaction, member: discord.Member
     )
 
     await interaction.response.send_message(result, ephemeral=True)
+
+
+@bot.tree.command(name="warn", description="DM a warning to a server member")
+@app_commands.describe(
+    member="The member to warn",
+    reason="Why they are receiving a warning"
+)
+async def warn_slash(
+    interaction: discord.Interaction,
+    member: discord.Member,
+    reason: str = "No reason provided"
+):
+
+    result = await warn_member(
+        interaction.guild,
+        interaction.user,
+        member,
+        reason
+    )
+
+    await interaction.response.send_message(
+        result,
+        ephemeral=True
+    )
+
+
+@bot.tree.command(name="joke", description="Tell a random joke")
+async def joke_slash(interaction: discord.Interaction):
+
+    await interaction.response.send_message(
+        get_joke()
+    )
+
+
+@bot.tree.command(name="poll", description="Create a poll")
+@app_commands.describe(
+    question="The poll question",
+    answer1="The first answer",
+    answer2="The second answer",
+    answer3="The third answer (optional)"
+)
+async def poll_slash(
+    interaction: discord.Interaction,
+    question: str,
+    answer1: str,
+    answer2: str,
+    answer3: str = None
+):
+
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "Polls can only be created in a server.",
+            ephemeral=True
+        )
+        return
+
+    try:
+
+        await create_poll(
+            interaction.channel,
+            question,
+            answer1,
+            answer2,
+            answer3
+        )
+
+        await interaction.response.send_message(
+            "📊 Poll created!",
+            ephemeral=True
+        )
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I need permission to send messages and add reactions here.",
+            ephemeral=True
+        )
+
+    except discord.HTTPException as error:
+        print("Poll error:", error)
+
+        await interaction.response.send_message(
+            "Something went wrong while creating the poll.",
+            ephemeral=True
+        )
 
 
 @bot.tree.command(name="userinfo", description="View information about a server member")
