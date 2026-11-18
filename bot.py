@@ -15,6 +15,7 @@ from discord import app_commands
 intents = discord.Intents.default()
 intents.message_content = True
 intents.members = True
+intents.voice_states = True
 
 
 class SpaceDood(commands.Bot):
@@ -360,8 +361,6 @@ def save_modmail_threads():
     save_json(MODMAIL_THREADS_FILE, modmail_threads)
 
 
-# FIXED: Create a default configuration if the server
-# doesn't already have one.
 def get_modmail_config(guild_id):
     server_id = str(guild_id)
 
@@ -495,7 +494,6 @@ async def setup_modmail(guild):
     try:
         category = await get_modmail_category(guild)
 
-        # Update the category permissions in case staff roles changed.
         await category.set_permissions(
             guild.default_role,
             view_channel=False
@@ -548,7 +546,6 @@ async def setup_modmail(guild):
 
 
 async def find_modmail_guild():
-    # This bot setup uses one Modmail server.
     for guild_id, config in modmail_config.items():
         if not config.get("enabled", False):
             continue
@@ -817,6 +814,67 @@ async def close_modmail(channel, actor):
     except discord.HTTPException as error:
         print("Modmail close error:", error)
         return False, "Something went wrong while closing Modmail."
+
+
+# ==================================
+# TEMPVOICE DATABASE
+# ==================================
+
+TEMPVOICE_FILE = "tempvoice_config.json"
+tempvoice_data = load_json(TEMPVOICE_FILE)
+
+
+def save_tempvoice():
+    save_json(TEMPVOICE_FILE, tempvoice_data)
+
+
+def get_tempvoice_config(guild_id):
+    server_id = str(guild_id)
+
+    if server_id not in tempvoice_data:
+        tempvoice_data[server_id] = {
+            "generator_id": None,
+            "channels": {}
+        }
+        save_tempvoice()
+
+    config = tempvoice_data[server_id]
+    config.setdefault("generator_id", None)
+    config.setdefault("channels", {})
+
+    return config
+
+
+async def delete_tempvoice_channel(guild, channel_id):
+    config = get_tempvoice_config(guild.id)
+    channel_id = str(channel_id)
+
+    channel = guild.get_channel(int(channel_id))
+
+    if channel is None:
+        config["channels"].pop(channel_id, None)
+        save_tempvoice()
+        return
+
+    try:
+        await channel.delete(reason="Temporary voice channel is empty.")
+
+    except discord.NotFound:
+        pass
+
+    except discord.Forbidden:
+        print(
+            f"I don't have permission to delete temp voice channel "
+            f"{channel_id}."
+        )
+        return
+
+    except discord.HTTPException as error:
+        print("Tempvoice deletion error:", error)
+        return
+
+    config["channels"].pop(channel_id, None)
+    save_tempvoice()
 
 
 # ==================================
@@ -1633,6 +1691,92 @@ def create_userinfo_embed(member):
 
 
 # ==================================
+# SERVERINFO FUNCTION
+# ==================================
+
+def create_serverinfo_embed(guild):
+    embed = discord.Embed(
+        title=f"Server Information: {guild.name}",
+        color=discord.Color.blurple()
+    )
+
+    if guild.icon:
+        embed.set_thumbnail(url=guild.icon.url)
+
+    owner = guild.owner
+
+    embed.add_field(
+        name="Server Name",
+        value=guild.name,
+        inline=True
+    )
+
+    embed.add_field(
+        name="Server ID",
+        value=str(guild.id),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Owner",
+        value=owner.mention if owner else "Unknown",
+        inline=False
+    )
+
+    embed.add_field(
+        name="Created",
+        value=discord.utils.format_dt(guild.created_at, style="F"),
+        inline=False
+    )
+
+    embed.add_field(
+        name="Members",
+        value=str(guild.member_count or len(guild.members)),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Roles",
+        value=str(len(guild.roles)),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Text Channels",
+        value=str(len(guild.text_channels)),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Voice Channels",
+        value=str(len(guild.voice_channels)),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Categories",
+        value=str(len(guild.categories)),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Boosts",
+        value=str(guild.premium_subscription_count or 0),
+        inline=True
+    )
+
+    embed.add_field(
+        name="Boost Level",
+        value=f"Level {guild.premium_tier}",
+        inline=True
+    )
+
+    embed.set_footer(text=f"Server ID: {guild.id}")
+
+    return embed
+
+
+# ==================================
 # PREFIX TICKET COMMANDS (!)
 # ==================================
 
@@ -1865,6 +2009,39 @@ async def greetmsg_prefix_error(ctx, error):
 
 
 # ==================================
+# PREFIX TEMPVOICE COMMAND
+# ==================================
+
+@bot.command(name="tempvoice")
+@commands.has_guild_permissions(manage_guild=True)
+async def tempvoice_prefix(ctx, channel: discord.VoiceChannel):
+    if ctx.guild is None:
+        return
+
+    config = get_tempvoice_config(ctx.guild.id)
+    config["generator_id"] = channel.id
+    save_tempvoice()
+
+    await ctx.send(
+        f"✅ Tempvoice generator set to {channel.mention}!\n"
+        "When someone joins that channel, Space Dood will create "
+        "a temporary voice channel for them."
+    )
+
+
+@tempvoice_prefix.error
+async def tempvoice_prefix_error(ctx, error):
+    if isinstance(error, commands.MissingPermissions):
+        await ctx.send(
+            "You need the Manage Server permission to configure Tempvoice."
+        )
+    elif isinstance(error, commands.MissingRequiredArgument):
+        await ctx.send("Usage: `!tempvoice #VoiceChannel`")
+    elif isinstance(error, commands.BadArgument):
+        await ctx.send("Please mention a valid voice channel.")
+
+
+# ==================================
 # PREFIX COMMANDS (!)
 # ==================================
 
@@ -2031,6 +2208,15 @@ async def userinfo_prefix(ctx, member: discord.Member = None):
 
     member = member or ctx.author
     await ctx.send(embed=create_userinfo_embed(member))
+
+
+@bot.command(name="serverinfo")
+async def serverinfo_prefix(ctx):
+    if ctx.guild is None:
+        await ctx.send("This command can only be used in a server.")
+        return
+
+    await ctx.send(embed=create_serverinfo_embed(ctx.guild))
 
 
 @bot.command(name="balance")
@@ -2451,6 +2637,48 @@ async def greetmsg_slash(
 
 
 # ==================================
+# SLASH TEMPVOICE COMMAND
+# ==================================
+
+@bot.tree.command(
+    name="tempvoice",
+    description="Set the temporary voice channel generator"
+)
+@app_commands.describe(
+    channel="The voice channel members join to create temp channels"
+)
+@app_commands.default_permissions(manage_guild=True)
+async def tempvoice_slash(
+    interaction: discord.Interaction,
+    channel: discord.VoiceChannel
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    if not interaction.user.guild_permissions.manage_guild:
+        await interaction.response.send_message(
+            "You need the Manage Server permission to configure Tempvoice.",
+            ephemeral=True
+        )
+        return
+
+    config = get_tempvoice_config(interaction.guild.id)
+    config["generator_id"] = channel.id
+    save_tempvoice()
+
+    await interaction.response.send_message(
+        f"✅ Tempvoice generator set to {channel.mention}!\n"
+        "When someone joins that channel, Space Dood will create "
+        "a temporary voice channel for them.",
+        ephemeral=True
+    )
+
+
+# ==================================
 # SLASH COMMANDS (/)
 # ==================================
 
@@ -2713,6 +2941,24 @@ async def userinfo_slash(
 
 
 @bot.tree.command(
+    name="serverinfo",
+    description="View information about this server"
+)
+async def serverinfo_slash(interaction: discord.Interaction):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        embed=create_serverinfo_embed(interaction.guild),
+        ephemeral=True
+    )
+
+
+@bot.tree.command(
     name="balance",
     description="Check your Space Coins"
 )
@@ -2860,16 +3106,13 @@ async def dog_slash(interaction: discord.Interaction):
 
 @bot.event
 async def on_message(message):
-    # Ignore messages sent by bots.
     if message.author.bot:
         return
 
-    # Member DMs Space Dood: forward it to the Modmail channel.
     if isinstance(message.channel, discord.DMChannel):
         await relay_member_message(message)
         return
 
-    # Keep prefix commands working.
     await bot.process_commands(message)
 
 
@@ -2913,6 +3156,116 @@ async def on_member_join(member):
 
     except discord.HTTPException as error:
         print("Greeting error:", error)
+
+
+# ==================================
+# TEMPVOICE EVENT
+# ==================================
+
+@bot.event
+async def on_voice_state_update(member, before, after):
+    if member.bot:
+        return
+
+    guild = member.guild
+    config = get_tempvoice_config(guild.id)
+
+    # First, clean up the temporary channel the member left.
+    if before.channel is not None:
+        old_channel_id = str(before.channel.id)
+
+        if old_channel_id in config["channels"]:
+            remaining_members = [
+                current_member
+                for current_member in before.channel.members
+                if current_member.id != member.id
+            ]
+
+            if not remaining_members:
+                await delete_tempvoice_channel(
+                    guild,
+                    old_channel_id
+                )
+
+    # Next, check whether the member joined the generator channel.
+    generator_id = config.get("generator_id")
+
+    if (
+        after.channel is None
+        or generator_id is None
+        or after.channel.id != int(generator_id)
+    ):
+        return
+
+    generator = after.channel
+
+    bot_member = guild.me
+
+    if bot_member is None:
+        return
+
+    if not bot_member.guild_permissions.manage_channels:
+        print("Tempvoice needs the Manage Channels permission.")
+        return
+
+    if not bot_member.guild_permissions.move_members:
+        print("Tempvoice needs the Move Members permission.")
+        return
+
+    username = member.display_name.lower().replace(" ", "-")
+    username = "".join(
+        character
+        for character in username
+        if character.isalnum() or character == "-"
+    )
+
+    channel_name = f"{username[:80]}'s channel"
+
+    overwrites = dict(generator.overwrites)
+
+    overwrites[member] = discord.PermissionOverwrite(
+        view_channel=True,
+        connect=True,
+        speak=True,
+        manage_channels=True,
+        move_members=True
+    )
+
+    try:
+        temp_channel = await guild.create_voice_channel(
+            name=channel_name[:100],
+            category=generator.category,
+            overwrites=overwrites,
+            reason=f"Temporary voice channel for {member}"
+        )
+
+        config["channels"][str(temp_channel.id)] = {
+            "owner_id": member.id
+        }
+        save_tempvoice()
+
+        try:
+            await member.move_to(
+                temp_channel,
+                reason="Created a temporary voice channel."
+            )
+
+        except (discord.Forbidden, discord.HTTPException) as error:
+            print("Tempvoice move error:", error)
+
+            await delete_tempvoice_channel(
+                guild,
+                temp_channel.id
+            )
+
+    except discord.Forbidden:
+        print(
+            "I don't have permission to create or configure "
+            "temporary voice channels."
+        )
+
+    except discord.HTTPException as error:
+        print("Tempvoice creation error:", error)
 
 
 @bot.event
