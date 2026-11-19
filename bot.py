@@ -1255,7 +1255,7 @@ async def ask_ollama(question):
     }
 
     payload = {
-        "model": "gemma4",
+        "model": "gemma4:31b",
         "messages": [
             {
                 "role": "user",
@@ -1279,7 +1279,16 @@ async def ask_ollama(question):
 
                 if response.status != 200:
                     error = await response.text()
-                    print("Ollama API error:", error)
+
+                    print("========== OLLAMA DEBUG ==========")
+
+                    print("HTTP STATUS:", response.status)
+
+                    print("ERROR RESPONSE:", error)
+
+                    print("==================================")
+
+                    return f"❌ Ollama API error ({response.status}): {error[:500]}"
 
                     if response.status == 401:
                         return "❌ Invalid Ollama API key!"
