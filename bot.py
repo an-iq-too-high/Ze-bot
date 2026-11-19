@@ -1238,6 +1238,78 @@ async def get_animal_image(animal):
 
 
 # ==================================
+# OLLAMA AI FUNCTION
+# ==================================
+
+async def ask_ollama(question):
+    api_key = os.getenv("OLLAMA_API_KEY")
+
+    if not api_key:
+        return "❌ OLLAMA_API_KEY is missing!"
+
+    url = "https://ollama.com/api/chat"
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json"
+    }
+
+    payload = {
+        "model": "gemma4:31b",
+        "messages": [
+            {
+                "role": "user",
+                "content": question
+            }
+        ],
+        "stream": False
+    }
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=120)
+
+        async with aiohttp.ClientSession(
+            timeout=timeout
+        ) as session:
+            async with session.post(
+                url,
+                headers=headers,
+                json=payload
+            ) as response:
+
+                if response.status != 200:
+                    error = await response.text()
+                    print("Ollama API error:", error)
+
+                    if response.status == 401:
+                        return "❌ Invalid Ollama API key!"
+
+                    if response.status == 429:
+                        return "⏳ Ollama rate limit reached. Try again later!"
+
+                    return "❌ Ollama couldn't process your question."
+
+                data = await response.json()
+                answer = data.get("message", {}).get("content")
+
+                if not answer:
+                    return "❌ Ollama returned an empty response."
+
+                return answer
+
+    except asyncio.TimeoutError:
+        return "⏳ Ollama took too long to respond. Try again!"
+
+    except aiohttp.ClientError as error:
+        print("Ollama connection error:", error)
+        return "❌ Couldn't connect to Ollama."
+
+    except (ValueError, KeyError) as error:
+        print("Ollama response error:", error)
+        return "❌ Couldn't understand Ollama's response."
+
+
+# ==================================
 # MODERATION CHECKS
 # ==================================
 
@@ -2500,6 +2572,48 @@ async def rps_slash(
 # ==================================
 # SLASH COMMANDS (/)
 # ==================================
+
+@bot.tree.command(
+    name="question",
+    description="Ask Space Dood's AI a question"
+)
+@app_commands.describe(
+    prompt="What would you like to ask Space Dood?"
+)
+async def question_slash(
+    interaction: discord.Interaction,
+    prompt: str
+):
+    if not prompt.strip():
+        await interaction.response.send_message(
+            "Please enter a question!",
+            ephemeral=True
+        )
+        return
+
+    if len(prompt) > 1500:
+        await interaction.response.send_message(
+            "Your question must be 1500 characters or fewer!",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.defer(thinking=True)
+
+    answer = await ask_ollama(prompt)
+
+    if not answer:
+        answer = "❌ Ollama returned an empty response."
+
+    # Discord messages have a 2000-character limit.
+    chunks = [
+        answer[i:i + 1900]
+        for i in range(0, len(answer), 1900)
+    ]
+
+    for chunk in chunks:
+        await interaction.followup.send(chunk)
+
 
 @bot.tree.command(name="kick", description="Kick a member")
 @app_commands.describe(
