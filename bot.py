@@ -1255,7 +1255,7 @@ async def ask_ollama(question):
     }
 
     payload = {
-        "model": "gemma4:31b",
+        "model": "gemma4",
         "messages": [
             {
                 "role": "user",
