@@ -29,4 +29,5 @@ jobs:
       - name: Start Discord Bot
         env:
           DISCORD_SECRET: ${{ secrets.DISCORD_SECRET }}
+          OLLAMA_API_KEY: ${{ secrets.OLLAMA_API_KEY }}
         run: python bot.py
