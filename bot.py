@@ -50,6 +50,42 @@ def save_json(filename, data):
 
 
 # ==================================
+# CHANNEL LOCKDOWN DATABASE
+# ==================================
+
+LOCKDOWN_FILE = "lockdown_config.json"
+lockdown_data = load_json(LOCKDOWN_FILE)
+
+
+def save_lockdown():
+    save_json(LOCKDOWN_FILE, lockdown_data)
+
+
+def get_lockdown_entry(guild_id, channel_id):
+    return lockdown_data.get(str(guild_id), {}).get(str(channel_id))
+
+
+def set_lockdown_entry(guild_id, channel_id, previous_send_messages):
+    guild_key = str(guild_id)
+    channel_key = str(channel_id)
+    lockdown_data.setdefault(guild_key, {})
+    lockdown_data[guild_key][channel_key] = {
+        "send_messages": previous_send_messages
+    }
+    save_lockdown()
+
+
+def remove_lockdown_entry(guild_id, channel_id):
+    guild_key = str(guild_id)
+    channel_key = str(channel_id)
+    server = lockdown_data.get(guild_key, {})
+    server.pop(channel_key, None)
+    if not server:
+        lockdown_data.pop(guild_key, None)
+    save_lockdown()
+
+
+# ==================================
 # GIVEAWAY DATABASE
 # ==================================
 
@@ -2988,6 +3024,131 @@ async def dog_slash(interaction: discord.Interaction):
     )
     embed.set_image(url=image_url)
     await interaction.followup.send(embed=embed)
+
+
+# ==================================
+# CHANNEL LOCKDOWN SLASH COMMAND
+# ==================================
+
+lockdown_group = app_commands.Group(
+    name="lockdown",
+    description="Lock or unlock a specific text channel"
+)
+
+
+@lockdown_group.command(name="channel", description="Lock a text channel")
+@app_commands.describe(channel="The channel to lock")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def lockdown_channel(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.", ephemeral=True
+        )
+        return
+
+    bot_member = interaction.guild.me
+    if bot_member is None or not bot_member.guild_permissions.manage_channels:
+        await interaction.response.send_message(
+            "I need the Manage Channels permission to lock channels.",
+            ephemeral=True
+        )
+        return
+
+    if get_lockdown_entry(interaction.guild.id, channel.id) is not None:
+        await interaction.response.send_message(
+            f"🔒 {channel.mention} is already locked by Space Dood.",
+            ephemeral=True
+        )
+        return
+
+    overwrite = channel.overwrites_for(interaction.guild.default_role)
+    previous_value = overwrite.send_messages
+    overwrite.send_messages = False
+
+    try:
+        await channel.set_permissions(
+            interaction.guild.default_role,
+            overwrite=overwrite,
+            reason=f"Channel lockdown by {interaction.user}"
+        )
+        set_lockdown_entry(
+            interaction.guild.id, channel.id, previous_value
+        )
+        await interaction.response.send_message(
+            f"🔒 {channel.mention} has been locked.", ephemeral=True
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I don't have permission to change that channel's permissions.",
+            ephemeral=True
+        )
+    except discord.HTTPException as error:
+        print("Lockdown error:", error)
+        await interaction.response.send_message(
+            "Something went wrong while locking the channel.",
+            ephemeral=True
+        )
+
+
+@lockdown_group.command(name="off", description="Unlock a text channel")
+@app_commands.describe(channel="The channel to unlock")
+@app_commands.checks.has_permissions(manage_channels=True)
+async def lockdown_off(
+    interaction: discord.Interaction,
+    channel: discord.TextChannel
+):
+    if interaction.guild is None:
+        await interaction.response.send_message(
+            "This command can only be used in a server.", ephemeral=True
+        )
+        return
+
+    bot_member = interaction.guild.me
+    if bot_member is None or not bot_member.guild_permissions.manage_channels:
+        await interaction.response.send_message(
+            "I need the Manage Channels permission to unlock channels.",
+            ephemeral=True
+        )
+        return
+
+    entry = get_lockdown_entry(interaction.guild.id, channel.id)
+    if entry is None:
+        await interaction.response.send_message(
+            f"{channel.mention} isn't locked by Space Dood.",
+            ephemeral=True
+        )
+        return
+
+    overwrite = channel.overwrites_for(interaction.guild.default_role)
+    overwrite.send_messages = entry.get("send_messages")
+
+    try:
+        await channel.set_permissions(
+            interaction.guild.default_role,
+            overwrite=overwrite,
+            reason=f"Channel unlocked by {interaction.user}"
+        )
+        remove_lockdown_entry(interaction.guild.id, channel.id)
+        await interaction.response.send_message(
+            f"🔓 {channel.mention} has been unlocked.", ephemeral=True
+        )
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "I don't have permission to change that channel's permissions.",
+            ephemeral=True
+        )
+    except discord.HTTPException as error:
+        print("Unlock error:", error)
+        await interaction.response.send_message(
+            "Something went wrong while unlocking the channel.",
+            ephemeral=True
+        )
+
+
+bot.tree.add_command(lockdown_group)
 
 
 # ==================================
