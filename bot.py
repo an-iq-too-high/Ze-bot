@@ -5,7 +5,7 @@ import datetime
 import asyncio
 import aiohttp
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 from discord import app_commands
 
 # ==================================
@@ -24,6 +24,21 @@ class SpaceDood(commands.Bot):
         self.add_view(TicketCloseView())
         await self.tree.sync()
         await resume_giveaways()
+        self.server_count_status.start()
+
+    @tasks.loop(minutes=1)
+    async def server_count_status(self):
+        if self.user:
+            await self.change_presence(
+                activity=discord.Activity(
+                    type=discord.ActivityType.watching,
+                    name=f"{len(self.guilds)} servers"
+                )
+            )
+
+    @server_count_status.before_loop
+    async def before_server_count_status(self):
+        await self.wait_until_ready()
 
 
 bot = SpaceDood(command_prefix="!", intents=intents)
@@ -385,20 +400,24 @@ def get_modmail_config(guild_id):
     return config
 
 
-def get_modmail_thread(user_id):
-    return modmail_threads.get(str(user_id))
+def modmail_thread_key(user_id, guild_id):
+    return f"{guild_id}:{user_id}"
+
+
+def get_modmail_thread(user_id, guild_id):
+    return modmail_threads.get(modmail_thread_key(user_id, guild_id))
 
 
 def save_modmail_thread(user_id, guild_id, channel_id):
-    modmail_threads[str(user_id)] = {
+    modmail_threads[modmail_thread_key(user_id, guild_id)] = {
         "guild_id": guild_id,
         "channel_id": channel_id
     }
     save_modmail_threads()
 
 
-def remove_modmail_thread(user_id):
-    modmail_threads.pop(str(user_id), None)
+def remove_modmail_thread(user_id, guild_id):
+    modmail_threads.pop(modmail_thread_key(user_id, guild_id), None)
     save_modmail_threads()
 
 
@@ -591,8 +610,8 @@ async def create_modmail_channel(guild, user):
     return channel
 
 
-async def get_active_modmail_channel(user_id):
-    thread = get_modmail_thread(user_id)
+async def get_active_modmail_channel(user_id, guild_id):
+    thread = get_modmail_thread(user_id, guild_id)
     if thread is None:
         return None
 
@@ -605,15 +624,15 @@ async def get_active_modmail_channel(user_id):
         try:
             channel = await guild.fetch_channel(int(thread["channel_id"]))
         except (discord.NotFound, discord.Forbidden):
-            remove_modmail_thread(user_id)
+            remove_modmail_thread(user_id, guild_id)
             return None
 
     if not isinstance(channel, discord.TextChannel):
-        remove_modmail_thread(user_id)
+        remove_modmail_thread(user_id, guild_id)
         return None
 
     if is_modmail_closed(channel):
-        remove_modmail_thread(user_id)
+        remove_modmail_thread(user_id, guild_id)
         return None
 
     return channel
@@ -621,7 +640,39 @@ async def get_active_modmail_channel(user_id):
 
 async def relay_member_message(message):
     user = message.author
-    guild = await find_modmail_guild()
+    content = message.content.strip()
+    configured_guilds = [
+        bot.get_guild(int(guild_id))
+        for guild_id, config in modmail_config.items()
+        if config.get("enabled", False)
+    ]
+    configured_guilds = [guild for guild in configured_guilds if guild is not None]
+
+    guild = None
+    routed_message = content
+    if content.startswith("!"):
+        command_text = content[1:].strip()
+        for candidate in configured_guilds:
+            prefix = candidate.name
+            if (command_text.lower().startswith(prefix.lower())
+                    and len(command_text) > len(prefix)
+                    and command_text[len(prefix)].isspace()):
+                remainder = command_text[len(prefix):].strip()
+                if remainder:
+                    guild = candidate
+                    routed_message = remainder
+                    break
+
+    if guild is None and len(configured_guilds) == 1:
+        guild = configured_guilds[0]
+    elif guild is None and len(configured_guilds) > 1:
+        await user.send(
+            "You have to choose a server for Modmail. Send your message like:\n"
+            "You have to choose a server for Modmail. Send your message like:\n"
+            "`!Server Name your message here`\n\n"
+            "Replace **Server Name** with the exact server name."
+        )
+        return
 
     if guild is None:
         await user.send(
@@ -630,7 +681,7 @@ async def relay_member_message(message):
         )
         return
 
-    channel = await get_active_modmail_channel(user.id)
+    channel = await get_active_modmail_channel(user.id, guild.id)
 
     if channel is None:
         try:
@@ -664,7 +715,7 @@ async def relay_member_message(message):
         except discord.HTTPException:
             print("Couldn't copy a Modmail attachment.")
 
-    content = message.content.strip() or "(No text message.)"
+    content = routed_message.strip() or "(No text message.)"
     embed = discord.Embed(
         title="📩 Member Message",
         description=content[:4000],
@@ -757,7 +808,7 @@ async def close_modmail(channel, actor):
             name=f"closed-{channel.name}"[:100],
             topic=f"SpaceDoodModmail|owner={owner_id}|status=closed"
         )
-        remove_modmail_thread(owner_id)
+        remove_modmail_thread(owner_id, channel.guild.id)
         return True, "🔒 Modmail conversation closed successfully!"
 
     except discord.Forbidden:
