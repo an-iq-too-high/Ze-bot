@@ -80,13 +80,11 @@ def get_lockdown_entry(guild_id, channel_id):
     return lockdown_data.get(str(guild_id), {}).get(str(channel_id))
 
 
-def set_lockdown_entry(guild_id, channel_id, previous_send_messages):
+def set_lockdown_entry(guild_id, channel_id, previous_permissions):
     guild_key = str(guild_id)
     channel_key = str(channel_id)
     lockdown_data.setdefault(guild_key, {})
-    lockdown_data[guild_key][channel_key] = {
-        "send_messages": previous_send_messages
-    }
+    lockdown_data[guild_key][channel_key] = previous_permissions
     save_lockdown()
 
 
@@ -1412,8 +1410,8 @@ async def ask_ollama(question):
 def check_moderation(guild, actor, target, permission):
     if guild is None:
         return "This command can only be used in a server."
-    if not getattr(actor.guild_permissions, permission):
-        return "You don't have permission to do that."
+    if not actor.guild_permissions.manage_guild:
+        return "You need the Manage Server permission to use moderation commands."
     if target.id == actor.id:
         return "You can't moderate yourself!"
     if target.id == guild.owner_id:
@@ -1523,11 +1521,8 @@ async def moderate(
 async def warn_member(guild, actor, target, reason):
     if guild is None:
         return "This command can only be used in a server."
-    if not actor.guild_permissions.manage_messages:
-        return (
-            "You need the Manage Messages permission "
-            "to warn members."
-        )
+    if not actor.guild_permissions.manage_guild:
+        return "You need the Manage Server permission to use moderation commands."
     if target.id == actor.id:
         return "You can't warn yourself!"
     if target.bot:
@@ -2534,9 +2529,9 @@ async def tempvoice_slash(
 # ROCK PAPER SCISSORS
 # ==================================
 
-# Only one player waits at a time.
-# This queue resets when the bot restarts.
-rps_waiting_player = None
+# One waiting player per server.
+# These queues reset when the bot restarts.
+rps_waiting_players = {}
 rps_lock = asyncio.Lock()
 
 
@@ -2568,39 +2563,29 @@ def get_rps_winner(choice1, choice2):
         app_commands.Choice(name="Scissors", value="scissors")
     ]
 )
-@app_commands.allowed_contexts(
-    guilds=False,
-    dms=True,
-    private_channels=False
-)
-@app_commands.allowed_installs(
-    guilds=False,
-    users=True
-)
 async def rps_slash(
     interaction: discord.Interaction,
     choice: app_commands.Choice[str]
 ):
-    global rps_waiting_player
-
-    # Make sure this is a one-to-one DM, not a server or group DM.
-    if not isinstance(interaction.channel, discord.DMChannel):
+    if interaction.guild is None:
         await interaction.response.send_message(
-            "❌ RPS can only be played in a private DM with Space Dood!"
+            "❌ RPS must be played in a server channel.", ephemeral=True
         )
         return
 
     player = interaction.user
     player_choice = choice.value
+    guild_id = interaction.guild.id
 
     async with rps_lock:
-        # No opponent is waiting yet.
-        if rps_waiting_player is None:
-            rps_waiting_player = {
+        waiting_player = rps_waiting_players.get(guild_id)
+
+        # No opponent is waiting in this server.
+        if waiting_player is None:
+            rps_waiting_players[guild_id] = {
                 "user_id": player.id,
                 "choice": player_choice
             }
-
             await interaction.response.send_message(
                 "🎮 **Rock Paper Scissors!**\n\n"
                 f"Your choice: **{player_choice.title()}**\n\n"
@@ -2609,16 +2594,16 @@ async def rps_slash(
             return
 
         # Stop a player from matching against themselves.
-        if rps_waiting_player["user_id"] == player.id:
+        if waiting_player["user_id"] == player.id:
             await interaction.response.send_message(
                 "⏳ You're already waiting for an opponent!"
             )
             return
 
         # An opponent was found.
-        opponent_id = rps_waiting_player["user_id"]
-        opponent_choice = rps_waiting_player["choice"]
-        rps_waiting_player = None
+        opponent_id = waiting_player["user_id"]
+        opponent_choice = waiting_player["choice"]
+        rps_waiting_players.pop(guild_id, None)
 
     opponent = await bot.fetch_user(opponent_id)
 
@@ -3089,7 +3074,7 @@ lockdown_group = app_commands.Group(
 
 @lockdown_group.command(name="channel", description="Lock a text channel")
 @app_commands.describe(channel="The channel to lock")
-@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.checks.has_permissions(manage_guild=True)
 async def lockdown_channel(
     interaction: discord.Interaction,
     channel: discord.TextChannel
@@ -3116,20 +3101,28 @@ async def lockdown_channel(
         return
 
     overwrite = channel.overwrites_for(interaction.guild.default_role)
-    previous_value = overwrite.send_messages
+    previous_permissions = {
+        "send_messages": overwrite.send_messages,
+        "create_public_threads": overwrite.create_public_threads,
+        "create_private_threads": overwrite.create_private_threads,
+        "send_messages_in_threads": overwrite.send_messages_in_threads,
+    }
     overwrite.send_messages = False
+    overwrite.create_public_threads = True
+    overwrite.create_private_threads = True
+    overwrite.send_messages_in_threads = True
 
     try:
         await channel.set_permissions(
             interaction.guild.default_role,
             overwrite=overwrite,
-            reason=f"Channel lockdown by {interaction.user}"
+            reason=f"Threads-only lockdown by {interaction.user}"
         )
         set_lockdown_entry(
-            interaction.guild.id, channel.id, previous_value
+            interaction.guild.id, channel.id, previous_permissions
         )
         await interaction.response.send_message(
-            f"🔒 {channel.mention} has been locked.", ephemeral=True
+            f"🔒 {channel.mention} is now threads-only! Members can create and chat in threads, but not send messages directly in the channel.", ephemeral=True
         )
     except discord.Forbidden:
         await interaction.response.send_message(
@@ -3146,7 +3139,7 @@ async def lockdown_channel(
 
 @lockdown_group.command(name="off", description="Unlock a text channel")
 @app_commands.describe(channel="The channel to unlock")
-@app_commands.checks.has_permissions(manage_channels=True)
+@app_commands.checks.has_permissions(manage_guild=True)
 async def lockdown_off(
     interaction: discord.Interaction,
     channel: discord.TextChannel
@@ -3175,6 +3168,9 @@ async def lockdown_off(
 
     overwrite = channel.overwrites_for(interaction.guild.default_role)
     overwrite.send_messages = entry.get("send_messages")
+    overwrite.create_public_threads = entry.get("create_public_threads")
+    overwrite.create_private_threads = entry.get("create_private_threads")
+    overwrite.send_messages_in_threads = entry.get("send_messages_in_threads")
 
     try:
         await channel.set_permissions(
@@ -3184,7 +3180,7 @@ async def lockdown_off(
         )
         remove_lockdown_entry(interaction.guild.id, channel.id)
         await interaction.response.send_message(
-            f"🔓 {channel.mention} has been unlocked.", ephemeral=True
+            f"🔓 {channel.mention} has had its previous permissions restored.", ephemeral=True
         )
     except discord.Forbidden:
         await interaction.response.send_message(
