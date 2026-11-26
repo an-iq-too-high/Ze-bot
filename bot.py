@@ -2529,12 +2529,6 @@ async def tempvoice_slash(
 # ROCK PAPER SCISSORS
 # ==================================
 
-# One waiting player per server.
-# These queues reset when the bot restarts.
-rps_waiting_players = {}
-rps_lock = asyncio.Lock()
-
-
 def get_rps_winner(choice1, choice2):
     if choice1 == choice2:
         return None
@@ -2545,17 +2539,145 @@ def get_rps_winner(choice1, choice2):
         "scissors": "paper"
     }
 
-    if winning_combinations[choice1] == choice2:
-        return 1
+    return 1 if winning_combinations[choice1] == choice2 else 2
 
-    return 2
+
+class RPSChallengeView(discord.ui.View):
+    def __init__(self, challenger, opponent, challenger_choice):
+        super().__init__(timeout=120)
+        self.challenger = challenger
+        self.opponent = opponent
+        self.challenger_choice = challenger_choice
+        self.finished = False
+        self.message = None
+
+    async def interaction_check(self, interaction):
+        if interaction.user.id != self.opponent.id:
+            await interaction.response.send_message(
+                "❌ This challenge isn't for you!",
+                ephemeral=True
+            )
+            return False
+
+        if self.finished:
+            await interaction.response.send_message(
+                "This challenge has already ended.",
+                ephemeral=True
+            )
+            return False
+
+        return True
+
+    async def finish_game(self, interaction, opponent_choice):
+        if self.finished:
+            await interaction.response.send_message(
+                "This challenge has already ended.",
+                ephemeral=True
+            )
+            return
+
+        self.finished = True
+
+        winner = get_rps_winner(
+            self.challenger_choice,
+            opponent_choice
+        )
+
+        if winner is None:
+            result = (
+                "🤝 **IT'S A TIE!**\n\n"
+                f"{self.challenger.mention}: "
+                f"**{self.challenger_choice.title()}**\n"
+                f"{self.opponent.mention}: "
+                f"**{opponent_choice.title()}**"
+            )
+        elif winner == 1:
+            result = (
+                f"🏆 **{self.challenger.mention} WINS!**\n\n"
+                f"{self.challenger.mention}: "
+                f"**{self.challenger_choice.title()}**\n"
+                f"{self.opponent.mention}: "
+                f"**{opponent_choice.title()}**"
+            )
+        else:
+            result = (
+                f"🏆 **{self.opponent.mention} WINS!**\n\n"
+                f"{self.challenger.mention}: "
+                f"**{self.challenger_choice.title()}**\n"
+                f"{self.opponent.mention}: "
+                f"**{opponent_choice.title()}**"
+            )
+
+        for child in self.children:
+            child.disabled = True
+
+        await interaction.response.edit_message(
+            content=result,
+            view=self
+        )
+
+        try:
+            await self.challenger.send(result)
+        except discord.Forbidden:
+            print(
+                f"Couldn't DM RPS results to {self.challenger.id}."
+            )
+        except discord.HTTPException as error:
+            print("RPS result delivery error:", error)
+
+        self.stop()
+
+    @discord.ui.button(
+        label="Rock",
+        emoji="🪨",
+        style=discord.ButtonStyle.primary
+    )
+    async def rock(self, interaction, button):
+        await self.finish_game(interaction, "rock")
+
+    @discord.ui.button(
+        label="Paper",
+        emoji="📄",
+        style=discord.ButtonStyle.primary
+    )
+    async def paper(self, interaction, button):
+        await self.finish_game(interaction, "paper")
+
+    @discord.ui.button(
+        label="Scissors",
+        emoji="✂️",
+        style=discord.ButtonStyle.primary
+    )
+    async def scissors(self, interaction, button):
+        await self.finish_game(interaction, "scissors")
+
+    async def on_timeout(self):
+        if self.finished:
+            return
+
+        self.finished = True
+
+        for child in self.children:
+            child.disabled = True
+
+        if self.message:
+            try:
+                await self.message.edit(
+                    content="⌛ This Rock Paper Scissors challenge expired.",
+                    view=self
+                )
+            except discord.HTTPException:
+                pass
 
 
 @bot.tree.command(
     name="rps",
-    description="Play Rock Paper Scissors against another player"
+    description="Challenge someone to Rock Paper Scissors"
 )
-@app_commands.describe(choice="Choose rock, paper, or scissors")
+@app_commands.describe(
+    choice="Choose rock, paper, or scissors",
+    challenger="The person you want to challenge"
+)
 @app_commands.choices(
     choice=[
         app_commands.Choice(name="Rock", value="rock"),
@@ -2565,89 +2687,65 @@ def get_rps_winner(choice1, choice2):
 )
 async def rps_slash(
     interaction: discord.Interaction,
-    choice: app_commands.Choice[str]
+    choice: app_commands.Choice[str],
+    challenger: discord.Member
 ):
     if interaction.guild is None:
         await interaction.response.send_message(
-            "❌ RPS must be played in a server channel.", ephemeral=True
+            "❌ RPS must be played in a server.",
+            ephemeral=True
         )
         return
 
-    player = interaction.user
-    player_choice = choice.value
-    guild_id = interaction.guild.id
+    if challenger.bot:
+        await interaction.response.send_message(
+            "❌ You can't challenge a bot!",
+            ephemeral=True
+        )
+        return
 
-    async with rps_lock:
-        waiting_player = rps_waiting_players.get(guild_id)
+    if challenger.id == interaction.user.id:
+        await interaction.response.send_message(
+            "❌ You can't challenge yourself!",
+            ephemeral=True
+        )
+        return
 
-        # No opponent is waiting in this server.
-        if waiting_player is None:
-            rps_waiting_players[guild_id] = {
-                "user_id": player.id,
-                "choice": player_choice
-            }
-            await interaction.response.send_message(
-                "🎮 **Rock Paper Scissors!**\n\n"
-                f"Your choice: **{player_choice.title()}**\n\n"
-                "⏳ Waiting for another player..."
-            )
-            return
-
-        # Stop a player from matching against themselves.
-        if waiting_player["user_id"] == player.id:
-            await interaction.response.send_message(
-                "⏳ You're already waiting for an opponent!"
-            )
-            return
-
-        # An opponent was found.
-        opponent_id = waiting_player["user_id"]
-        opponent_choice = waiting_player["choice"]
-        rps_waiting_players.pop(guild_id, None)
-
-    opponent = await bot.fetch_user(opponent_id)
-
-    winner = get_rps_winner(
-        opponent_choice,
-        player_choice
+    view = RPSChallengeView(
+        interaction.user,
+        challenger,
+        choice.value
     )
 
-    if winner is None:
-        result = (
-            "🤝 **IT'S A TIE!**\n\n"
-            f"**{opponent_choice.title()} ({opponent.mention})** "
-            "> "
-            f"**{player_choice.title()} ({player.mention})**"
-        )
-
-    elif winner == 1:
-        result = (
-            f"🏆 **{opponent.mention} WINS!**\n\n"
-            f"**{opponent_choice.title()} ({opponent.mention})** "
-            "> "
-            f"**{player_choice.title()} ({player.mention})**"
-        )
-
-    else:
-        result = (
-            f"🏆 **{player.mention} WINS!**\n\n"
-            f"**{player_choice.title()} ({player.mention})** "
-            "> "
-            f"**{opponent_choice.title()} ({opponent.mention})**"
-        )
-
-    # Send the result to the player who just submitted their choice.
-    await interaction.response.send_message(result)
-
-    # Also send the result to the player who was waiting.
     try:
-        await opponent.send(result)
-    except discord.Forbidden:
-        print(
-            f"Couldn't DM RPS results to player {opponent_id}."
+        sent_message = await challenger.send(
+            "🎮 **Rock Paper Scissors Challenge!**\n\n"
+            f"{interaction.user.mention} has challenged you!\n"
+            "Choose your move below:",
+            view=view
         )
+        view.message = sent_message
+
+    except discord.Forbidden:
+        await interaction.response.send_message(
+            "❌ I couldn't DM that person. "
+            "They may have DMs disabled.",
+            ephemeral=True
+        )
+        return
     except discord.HTTPException as error:
-        print("RPS result delivery error:", error)
+        print("RPS challenge delivery error:", error)
+        await interaction.response.send_message(
+            "❌ Something went wrong sending the challenge.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        f"✅ Your RPS challenge was sent to {challenger.mention}!\n"
+        "⏳ Waiting for their choice...",
+        ephemeral=True
+    )
 
 
 # ==================================
@@ -3122,7 +3220,8 @@ async def lockdown_channel(
             interaction.guild.id, channel.id, previous_permissions
         )
         await interaction.response.send_message(
-            f"🔒 {channel.mention} is now threads-only! Members can create and chat in threads, but not send messages directly in the channel.", ephemeral=True
+            f"🔒 {channel.mention} is now threads-only! Members can create and chat in threads, but not send messages directly in the channel.",
+            ephemeral=True
         )
     except discord.Forbidden:
         await interaction.response.send_message(
@@ -3180,7 +3279,8 @@ async def lockdown_off(
         )
         remove_lockdown_entry(interaction.guild.id, channel.id)
         await interaction.response.send_message(
-            f"🔓 {channel.mention} has had its previous permissions restored.", ephemeral=True
+            f"🔓 {channel.mention} has had its previous permissions restored.",
+            ephemeral=True
         )
     except discord.Forbidden:
         await interaction.response.send_message(
